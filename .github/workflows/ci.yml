@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  disallowed-files:
+    name: No bundled game files
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fail if disallowed file types are committed
+        run: |
+          # This repo must never contain ROMs, laserdisc video dumps, APKs, or signing keys.
+          # See README.md / CONTRIBUTING.md.
+          PATTERN='\.(zip|m2v|ogv|iso|apk|aab|jks|keystore)$'
+          MATCHES=$(git ls-files | grep -Ei "$PATTERN" || true)
+          if [ -n "$MATCHES" ]; then
+            echo "Disallowed file type(s) found in the repository:"
+            echo "$MATCHES"
+            exit 1
+          fi
+          echo "No disallowed file types found."
+
+  markdown-lint:
+    name: Markdown lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lint Markdown files
+        uses: DavidAnson/markdownlint-cli2-action@v17
+        with:
+          globs: "**/*.md"
+
+# A Gradle/NDK build-and-test job belongs here once the Android project
+# exists (Phase A/C of the project plan) — tracked separately, not a
+# placeholder job here.

@@ -6,14 +6,25 @@ This is a solo project with one AI collaborator (Claude Code). The workflow belo
 
 1. Create an issue before starting a meaningful piece of work.
 2. Describe the problem/goal, scope, and acceptance criteria — keep it short.
-3. Do the work.
-4. Post an **Implementation History** comment.
-5. Post a separate **Acceptance Verification** comment.
-6. Close the issue only after both comments are posted.
+3. Create a branch, do the work, commit referencing the issue number.
+4. Push the branch and open a pull request against `main`.
+5. CI must pass on the PR (see below) before it can be merged.
+6. Post an **Implementation History** comment on the issue.
+7. Post a separate **Acceptance Verification** comment on the issue.
+8. **The repository owner merges the PR** — not automatic, not done by the AI collaborator. Close the issue only after both comments are posted and the PR is merged.
 
 Issues are created **in segments, tied to the current phase of the project plan** — not all upfront. Each phase (see the repo's phase plan) gets its issues written when work on that phase actually starts, not before.
 
-Direct commits to `main` referencing the issue number are fine for this project's pace; a PR is optional, not required, unless a change is large enough that reviewing it as a diff is actually useful.
+`main` is branch-protected: force-push and deletion are blocked, and required CI status checks must pass before a PR can be merged.
+
+## Continuous Integration
+
+`.github/workflows/ci.yml` runs automatically on every push and pull request against `main` — no manual trigger needed. Currently checks:
+
+- **No bundled game files** — fails if a ROM, laserdisc video dump, APK, or signing key gets committed (this repo distributes none of those; see README).
+- **Markdown lint** — doc quality on `.md` files.
+
+A Gradle/NDK build-and-test job will be added once the Android project exists (Phase A/C) — tracked as its own follow-up, not faked in as a placeholder now.
 
 ## Implementation History comment
 
@@ -67,7 +78,7 @@ Skip the rest of the canonical fields from the ai-backlog model (source-system i
 - No dual-AI handoff protocol (single AI collaborator here).
 - No WSJF/prioritization scoring — phase order is already set by the project plan.
 - No formal Story/Bug/Enabler work-item model — plain issues, optionally labeled.
-- No mandatory PR-per-change — direct commits are fine for solo pace.
+- No formal review/approval workflow beyond CI passing — the owner merges based on their own read of the PR and the Implementation History/Acceptance Verification comments, not a separate review process.
 - No source-system read-only boundary section — not applicable.
 
 ## Security and privacy
