@@ -34,4 +34,26 @@ The second command should report an NDK-based clang build and list `aarch64-linu
 ## Notes
 
 - `sdkmanager` reports itself as deprecated in favor of a newer `android` CLI tool as of this NDK/SDK version. Still functional; noted here in case a future session hits removal.
-- vcpkg's `arm64-android` triplet setup (for cross-compiling SDL3 and the other native dependencies) is tracked separately — see the project's issue tracker.
+
+## vcpkg (`arm64-android` triplet)
+
+vcpkg is vendored as a git submodule at `vcpkg/` (pinned to a specific commit, not tracking a branch, for reproducible dependency versions). Its generated output (`buildtrees/`, `packages/`, `downloads/`, `vcpkg_installed/`) is gitignored — only the submodule pointer itself is tracked.
+
+Setup, after cloning this repo:
+
+```powershell
+git submodule update --init
+cd vcpkg
+./bootstrap-vcpkg.bat
+```
+
+vcpkg ships a first-party `triplets/arm64-android.cmake` triplet (not a community/unsupported one) — targets `arm64-v8a`, Android API level 28. It picks up the NDK automatically via the `ANDROID_NDK_HOME` env var set above; no extra vcpkg-side configuration needed.
+
+Verified working via a smoke-test install:
+
+```powershell
+cd vcpkg
+./vcpkg.exe install zlib:arm64-android
+```
+
+This built successfully using the NDK's `clang++`, producing genuine `elf64-littleaarch64` object files (confirmed with `llvm-readelf -h`) — the full vcpkg → NDK → cross-compiled arm64 static lib pipeline works end to end. The real dependency list (SDL3, SDL3_image, SDL3_ttf, SDL3_mixer, libvorbis, libzip) is tracked separately once Phase B starts.
