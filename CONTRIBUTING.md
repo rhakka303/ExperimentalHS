@@ -30,7 +30,7 @@ A Gradle/NDK build-and-test job will be added once the Android project exists (P
 
 What actually happened, separate from whether it worked.
 
-```
+```markdown
 ## Implementation History
 
 ### Changes made
@@ -51,7 +51,7 @@ What actually happened, separate from whether it worked.
 
 Whether the work satisfies the issue's stated acceptance criteria — separate from Implementation History, not a substitute for it.
 
-```
+```markdown
 ## Acceptance Verification
 
 - [ ] Criterion 1 — Pass/Fail — evidence
