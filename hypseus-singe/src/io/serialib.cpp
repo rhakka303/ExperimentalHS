@@ -227,7 +227,10 @@ char serialib::openDevice(const char *Device, const unsigned int Bauds,
     // If the device is not open, return -1
     if (fd == -1) return -2;
     // Open the device in nonblocking mode
-    fcntl(fd, F_SETFL, FNDELAY);
+    // FNDELAY is a BSD/glibc alias for O_NONBLOCK, not defined on Android's
+    // Bionic libc - O_NONBLOCK is the POSIX-standard name and works
+    // identically everywhere this branch already targets (__linux__/__APPLE__).
+    fcntl(fd, F_SETFL, O_NONBLOCK);
 
 
     // Get the current options of the port
