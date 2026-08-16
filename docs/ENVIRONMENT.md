@@ -56,4 +56,23 @@ cd vcpkg
 ./vcpkg.exe install zlib:arm64-android
 ```
 
-This built successfully using the NDK's `clang++`, producing genuine `elf64-littleaarch64` object files (confirmed with `llvm-readelf -h`) — the full vcpkg → NDK → cross-compiled arm64 static lib pipeline works end to end. The real dependency list (SDL3, SDL3_image, SDL3_ttf, SDL3_mixer, libvorbis, libzip) is tracked separately once Phase B starts.
+This built successfully using the NDK's `clang++`, producing genuine `elf64-littleaarch64` object files (confirmed with `llvm-readelf -h`) — the full vcpkg → NDK → cross-compiled arm64 static lib pipeline works end to end.
+
+### Phase B — real dependency list
+
+hypseus's actual dependencies (`find_package(...)` calls in `src/CMakeLists.txt`), cross-compiled and verified for `arm64-android`:
+
+```powershell
+cd vcpkg
+./vcpkg.exe install sdl3-image:arm64-android sdl3-ttf:arm64-android sdl3-mixer:arm64-android
+```
+
+All three (`sdl3-image@3.4.4`, `sdl3-ttf@3.2.2`, `sdl3-mixer@3.2.4`, plus transitive deps like `libpng`, `bzip2`) built successfully — total ~19 min. Output verified as genuine AArch64 via `llvm-readelf -h` on each library, not just "the command exited 0":
+
+```text
+libSDL3_image.a  Machine: AArch64
+libSDL3_ttf.a    Machine: AArch64
+libSDL3_mixer.a  Machine: AArch64
+```
+
+Remaining Phase B dependencies (Vorbis/Ogg, libzip, libmpeg2) are tracked separately — see the project's issue tracker.
