@@ -1,6 +1,6 @@
 # Hypdroid
 
-A standalone Android port of [Hypseus Singe](https://github.com/DirtBagXon/hypseus-singe), the laserdisc arcade emulator (Dragon's Lair, Space Ace, and fan-made Singe/Lua games), built directly from upstream source with a native gamepad-first game launcher UI.
+A standalone Android port of [Hypseus Singe](https://github.com/DirtBagXon/hypseus-singe), the laserdisc arcade emulator for fan-made Singe/Lua games, built directly from upstream source with a native gamepad-first game launcher UI.
 
 **Target hardware:** Android gaming handhelds (Retroid Pocket 5) and Android-based SBCs — physical gamepad input is the primary control path, not a touch-overlay afterthought.
 
