@@ -1,5 +1,6 @@
 plugins {
      id 'com.android.application'
+     id 'org.jetbrains.kotlin.android'
 }
 
 android {
@@ -7,7 +8,13 @@ android {
     compileSdkVersion 35
     ndkVersion = "30.0.15729638"
     defaultConfig {
-        minSdkVersion 21
+        // All Files Access (MANAGE_EXTERNAL_STORAGE, #27) is fundamentally
+        // an API 30+ concept - bumped from the SDL template's default 21
+        // since supporting older devices makes no sense for this project's
+        // actual target hardware anyway. Native code's ANDROID_PLATFORM
+        // (android-28, unchanged) stays lower than this and that's fine -
+        // its assumed API surface is a guaranteed subset of API 30+.
+        minSdkVersion 30
         targetSdkVersion 35
         versionCode 1
         versionName "1.0"
@@ -43,6 +50,19 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+    buildFeatures {
+        compose true
+    }
+    composeOptions {
+        kotlinCompilerExtensionVersion '1.5.14'
+    }
     applicationVariants.all { variant ->
         tasks["merge${variant.name.capitalize()}Assets"]
             .dependsOn("externalNativeBuild${variant.name.capitalize()}")
@@ -72,4 +92,15 @@ android {
 
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')
+
+    // Phase D: Settings/folder-browser/game-list screens (Kotlin + Compose).
+    // The native hypseus game itself has no Compose dependency at all.
+    implementation platform('androidx.compose:compose-bom:2024.06.00')
+    implementation 'androidx.core:core-ktx:1.13.1'
+    implementation 'androidx.activity:activity-compose:1.9.0'
+    implementation 'androidx.compose.ui:ui'
+    implementation 'androidx.compose.ui:ui-tooling-preview'
+    implementation 'androidx.compose.material3:material3'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.8.1'
+    debugImplementation 'androidx.compose.ui:ui-tooling'
 }

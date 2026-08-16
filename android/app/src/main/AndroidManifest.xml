@@ -53,6 +53,12 @@
     <!-- Allow access to the vibrator -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
+    <!-- Deliberately NOT requesting MANAGE_EXTERNAL_STORAGE (All Files
+         Access) - that grants read/write/delete over the entire device,
+         not just the folders the user picks. Using Storage Access
+         Framework instead (see MainActivity.kt): scoped to exactly the
+         folder(s) the user explicitly selects, nothing else. -->
+
     <!-- Allow access to Internet -->
     <!-- if you want to connect to the network or internet, uncomment this. -->
     <!--
@@ -78,6 +84,21 @@
         <meta-data android:name="SDL_ENV.SDL_ANDROID_TRAP_BACK_BUTTON" android:value="0"/>
          -->
 
+        <!-- The real app entry point: Kotlin/Compose dashboard (folder
+             picker, game list, settings). HypseusActivity (below) is
+             launched explicitly from here with constructed CLI-equivalent
+             args once the user picks a game - it's not the launcher. -->
+        <activity android:name=".MainActivity"
+            android:label="@string/app_name"
+            android:theme="@style/LauncherTheme"
+            android:exported="true"
+            >
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
         <activity android:name="HypseusActivity"
             android:label="@string/app_name"
             android:alwaysRetainTaskState="true"
@@ -86,10 +107,6 @@
             android:preferMinimalPostProcessing="true"
             android:exported="true"
             >
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
             <!-- Let Android know that we can handle some USB devices and should receive this event -->
             <intent-filter>
                 <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
