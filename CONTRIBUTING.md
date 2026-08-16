@@ -10,8 +10,8 @@ This is a solo project with one AI collaborator (Claude Code). The workflow belo
 4. Push the branch and open a pull request against `main`.
 5. CI must pass on the PR (see below) before it can be merged.
 6. Post an **Implementation History** comment on the issue.
-7. Post a separate **Acceptance Verification** comment on the issue.
-8. **The repository owner merges the PR** — not automatic, not done by the AI collaborator. Close the issue only after both comments are posted and the PR is merged.
+7. **The repository owner merges the PR** — not automatic, not done by the AI collaborator. Reviewing the PR before merging *is* the acceptance decision on this project; no separate Acceptance Verification comment is required (this isn't a strict human-in-the-loop showcase project like ai-backlog-agent-dashboard — it's personal, and the owner looks at the issue/PR before merging anyway).
+8. The issue closes once its PR is merged (either automatically via a "Closes #N" reference, or manually) — Claude may close it as routine cleanup once that's true, no separate sign-off needed for the close itself.
 
 Issues are created **in segments, tied to the current phase of the project plan** — not all upfront. Each phase (see the repo's phase plan) gets its issues written when work on that phase actually starts, not before.
 
@@ -24,7 +24,7 @@ Issues are created **in segments, tied to the current phase of the project plan*
 - **No bundled game files** — fails if a ROM, laserdisc video dump, APK, or signing key gets committed (this repo distributes none of those; see README).
 - **Markdown lint** — doc quality on `.md` files.
 
-A Gradle/NDK build-and-test job will be added once the Android project exists (Phase A/C) — tracked as its own follow-up, not faked in as a placeholder now.
+A Gradle/NDK build-and-test CI job doesn't exist yet, even though the Android project itself now does (Phase A) — tracked as its own follow-up, not faked in as a placeholder here.
 
 ## Implementation History comment
 
@@ -47,21 +47,7 @@ What actually happened, separate from whether it worked.
 - ...
 ```
 
-## Acceptance Verification comment
-
-Whether the work satisfies the issue's stated acceptance criteria — separate from Implementation History, not a substitute for it.
-
-```markdown
-## Acceptance Verification
-
-- [ ] Criterion 1 — Pass/Fail — evidence
-- [ ] Criterion 2 — Pass/Fail — evidence
-
-### Closure decision
-Close / Do not close — reason
-```
-
-Claims should be scoped to what was actually tested. "Not independently tested on a physical Retroid Pocket 5" is honest; "works on all hardware" is not, unless it was actually tried.
+Claims in the Implementation History should be scoped to what was actually tested. "Not independently tested on a physical Retroid Pocket 5" is honest; "works on all hardware" is not, unless it was actually tried.
 
 ## Issue content
 
@@ -78,7 +64,8 @@ Skip the rest of the canonical fields from the ai-backlog model (source-system i
 - No dual-AI handoff protocol (single AI collaborator here).
 - No WSJF/prioritization scoring — phase order is already set by the project plan.
 - No formal Story/Bug/Enabler work-item model — plain issues, optionally labeled.
-- No formal review/approval workflow beyond CI passing — the owner merges based on their own read of the PR and the Implementation History/Acceptance Verification comments, not a separate review process.
+- No formal review/approval workflow beyond CI passing — the owner merges based on their own read of the PR and the Implementation History comment, not a separate review process.
+- No separate Acceptance Verification comment/ceremony — merging the PR is the acceptance decision.
 - No source-system read-only boundary section — not applicable.
 
 ## Security and privacy
