@@ -52,6 +52,21 @@ endif()
 add_library( singeproxy ${LIB_SOURCES} ${LIB_HEADERS} )
 target_link_libraries( singeproxy PRIVATE plog io sdl3_deps )
 
+# Lua 5.1's TValue/GCObject representation relies on pointer type-punning
+# that modern compilers' strict-aliasing optimizations can silently break -
+# a well-documented Lua 5.1 build requirement upstream, but never applied
+# here. Missing on Android/Clang/arm64 specifically produced a real crash:
+# a table's __mode metatable field passed ttisstring() (its type tag looked
+# valid) but its string payload wasn't properly null-terminated by the time
+# traversetable()'s strchr(svalue(mode), ...) read it (lgc.c) - caught via
+# a real on-device SIGABRT (Bionic's FORTIFY: "strchr: prevented read past
+# end of buffer") during Lua's own luaL_openlibs() startup, before any game
+# script even runs. Confirmed via a full native crash backtrace symbolicated
+# with llvm-addr2line against the unstripped build.
+if( CMAKE_SYSTEM_PROCESSOR MATCHES "arm*|aarch64" )
+    target_compile_options( singeproxy PRIVATE -fno-strict-aliasing )
+endif()
+
 if(WIN32)
     target_link_libraries( singeproxy PRIVATE ws2_32 sdl3_deps )
 endif()
