@@ -75,7 +75,24 @@ libSDL3_ttf.a    Machine: AArch64
 libSDL3_mixer.a  Machine: AArch64
 ```
 
-Remaining Phase B dependencies (Vorbis/Ogg, libzip) are tracked separately — see the project's issue tracker.
+Vorbis/Ogg and libzip:
+
+```powershell
+cd vcpkg
+./vcpkg.exe install libvorbis:arm64-android "libzip[core]:arm64-android"
+```
+
+Hit a real port issue here: `libzip`'s default features include `default-aes`, which pulls in **OpenSSL** as a crypto backend on non-Windows/non-macOS platforms (Android counts). OpenSSL's `Configure` script (Perl + MSYS/autotools) failed to build specifically because this project's path (`D:/Claude Code/Hypdroid`) contains a space — a known class of problem for that toolchain on Windows, unrelated to the NDK/vcpkg pipeline itself. Since hypseus only needs plain zip read/write (its ROM sets and zlua packages aren't AES-encrypted), the fix was disabling default features entirely: `libzip[core]:arm64-android` — builds cleanly, no OpenSSL involved. `libvorbis` (and its `libogg` dependency) built without any issue.
+
+All verified as genuine AArch64 via `llvm-readelf -h`:
+
+```text
+libogg.a         Machine: AArch64
+libvorbis.a      Machine: AArch64
+libvorbisenc.a   Machine: AArch64
+libvorbisfile.a  Machine: AArch64
+libzip.a         Machine: AArch64
+```
 
 ## libmpeg2 (built from hypseus's vendored source, not vcpkg)
 
@@ -107,3 +124,5 @@ make install
 (`CFLAGS`/`configure` flags match hypseus's own `BuildLibMPEG2.cmake` module exactly, targeting Android API 28 for consistency with the vcpkg triplet.)
 
 Result: clean install layout (`include/mpeg2dec/*.h`, `lib/libmpeg2.a`, `lib/libmpeg2convert.a`) matching exactly what `BuildLibMPEG2.cmake` expects (`MPEG2_INCLUDE_DIRS`, `MPEG2_LIBRARIES`). Verified genuine AArch64 via `llvm-readelf -h` on the installed `libmpeg2.a`.
+
+All of Phase B's dependencies are now cross-compiled and verified for `arm64-android`.
