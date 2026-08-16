@@ -67,6 +67,7 @@ Skip the rest of the canonical fields from the ai-backlog model (source-system i
 - No formal review/approval workflow beyond CI passing — the owner merges based on their own read of the PR and the Implementation History comment, not a separate review process.
 - No separate Acceptance Verification comment/ceremony — merging the PR is the acceptance decision.
 - No source-system read-only boundary section — not applicable.
+- No GitHub Projects/Kanban board — the phase plan and issue list are enough tracking for a solo project.
 
 ## Security and privacy
 
