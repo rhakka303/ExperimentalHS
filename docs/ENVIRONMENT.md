@@ -69,7 +69,7 @@ cd vcpkg
 
 All three (`sdl3-image@3.4.4`, `sdl3-ttf@3.2.2`, `sdl3-mixer@3.2.4`, plus transitive deps like `libpng`, `bzip2`) built successfully — total ~19 min. Output verified as genuine AArch64 via `llvm-readelf -h` on each library, not just "the command exited 0":
 
-```
+```text
 libSDL3_image.a  Machine: AArch64
 libSDL3_ttf.a    Machine: AArch64
 libSDL3_mixer.a  Machine: AArch64
