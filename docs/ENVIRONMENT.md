@@ -211,6 +211,7 @@ Rearchitected around SAF instead: `MainActivity.kt` uses `ActivityResultContract
 `GameScanner.kt` scans a resolved home folder for both game categories hypseus supports and returns a plain `List<Game>` (name, category, framefile path, ROM/script path) — no UI beyond a plain list yet (that's Phase E), and a folder with no valid games just produces an empty list, never an error.
 
 **Confirmed folder layout** (owner-specified, differs from the upstream doc's example command which splits `-framefile`/`-zlua` across separate `singe/`/`roms/` locations): under whatever folder gets picked as the home dir —
+
 - **Fan-made (Singe) games** each get their own folder directly at the top level, e.g. `<home>/AlteredCarbonResleeved/AlteredCarbonResleeved.txt` (framefile) plus either `AlteredCarbonResleeved.zip` (zipped, `-zlua`) or `AlteredCarbonResleeved.singe` (unzipped script, `-script`) alongside it.
 - **Daphne-native games**: framefile at `<home>/vldp/<name>/<name>.txt`, ROM zip at `<home>/roms/<name>.zip`. `roms/` and `vldp/` are reserved top-level folder names, skipped when scanning for fan-made games.
 
