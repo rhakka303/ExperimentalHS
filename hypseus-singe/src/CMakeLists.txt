@@ -62,7 +62,25 @@ include(BuildLibMPEG2)
 
 set (CMAKE_CXX_STANDARD 11)
 
-build_libmpeg2( )
+if( ANDROID )
+    # The upstream build_libmpeg2() macro cross-compiles via an autotools
+    # ExternalProject_Add step (libtoolize/autoreconf/configure/make),
+    # triggered mid-CMake-configure. That's fragile to wire through a
+    # cross-compiling CMake configure on Android (needs a POSIX shell +
+    # autotools + the NDK toolchain all correctly threaded through
+    # ExternalProject's subprocess environment). Since Phase B already
+    # cross-compiled and verified libmpeg2 for arm64-v8a by hand (see
+    # docs/ENVIRONMENT.md), point directly at that pre-built artifact
+    # instead of re-triggering the autotools build here.
+    set( HYPDROID_PREBUILT_DIR "${CMAKE_SOURCE_DIR}/../../prebuilt" )
+    set( MPEG2_INCLUDE_DIRS "${HYPDROID_PREBUILT_DIR}/libmpeg2/arm64-v8a/include/mpeg2dec" )
+    set( MPEG2_LIBRARIES "${HYPDROID_PREBUILT_DIR}/libmpeg2/arm64-v8a/lib/libmpeg2.a" )
+    if( NOT EXISTS "${MPEG2_LIBRARIES}" )
+        message( FATAL_ERROR "Pre-built libmpeg2 not found at ${MPEG2_LIBRARIES} - see docs/ENVIRONMENT.md for the build recipe." )
+    endif()
+else()
+    build_libmpeg2( )
+endif()
 
 message(STATUS "Target: ${CMAKE_SYSTEM_NAME} ${CMAKE_TARGET_ARCHITECTURES}")
 
@@ -141,13 +159,24 @@ add_subdirectory(timer)
 add_subdirectory(video)
 add_subdirectory(vldp)
 
-add_dependencies( vldp libmpeg2 )
+if( NOT ANDROID )
+    # On Android, libmpeg2 is a pre-built artifact (see above), not a
+    # target this CMake invocation builds - no ordering dependency needed.
+    add_dependencies( vldp libmpeg2 )
+endif()
 add_dependencies( ldp-out vldp )
 add_dependencies( game vldp )
 add_dependencies( sound vldp )
 
-add_executable( hypseus hypseus.cpp globals.h )
-target_link_libraries( hypseus plog io timer sound video cpu game ${Vorbis_Enc_LIBRARY} Vorbis::vorbis ${OGG_LIBRARIES} ${VORBISFILE_LIBRARIES} ${Vorbis_File_LIBRARY} SDL3::SDL3 SDL3::Headers SDL3_ttf::SDL3_ttf SDL3_image::SDL3_image SDL3_mixer::SDL3_mixer ${LIBZIP_LIBRARY} )
+if( ANDROID )
+    # SDL3's Android JNI shell loads the app as a shared library named
+    # "main" (System.loadLibrary("main")), not a standalone executable.
+    add_library( main SHARED hypseus.cpp globals.h )
+    target_link_libraries( main plog io timer sound video cpu game ${Vorbis_Enc_LIBRARY} Vorbis::vorbis ${OGG_LIBRARIES} ${VORBISFILE_LIBRARIES} ${Vorbis_File_LIBRARY} SDL3::SDL3 SDL3::Headers SDL3_ttf::SDL3_ttf SDL3_image::SDL3_image SDL3_mixer::SDL3_mixer ${LIBZIP_LIBRARY} )
+else()
+    add_executable( hypseus hypseus.cpp globals.h )
+    target_link_libraries( hypseus plog io timer sound video cpu game ${Vorbis_Enc_LIBRARY} Vorbis::vorbis ${OGG_LIBRARIES} ${VORBISFILE_LIBRARIES} ${Vorbis_File_LIBRARY} SDL3::SDL3 SDL3::Headers SDL3_ttf::SDL3_ttf SDL3_image::SDL3_image SDL3_mixer::SDL3_mixer ${LIBZIP_LIBRARY} )
+endif()
 
 if(ASAN)
     target_link_options(hypseus PRIVATE -fsanitize=address -fno-omit-frame-pointer -g)
