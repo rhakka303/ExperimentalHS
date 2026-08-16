@@ -10,10 +10,24 @@ package org.libsdl.app;
  * customization point for exactly this case.
  */
 public class HypseusActivity extends SDLActivity {
+    public static final String EXTRA_ARGS = "org.libsdl.app.HypseusActivity.EXTRA_ARGS";
+
     @Override
     protected String[] getLibraries() {
         return new String[] {
             "main"
         };
+    }
+
+    /**
+     * MainActivity constructs the real argv (see LaunchArgs.kt) and passes
+     * it via this Intent extra before starting this activity - the base
+     * SDLActivity default (empty array) only gets hypseus as far as its own
+     * "no game specified" non-crashing exit path (verified in Phase C).
+     */
+    @Override
+    protected String[] getArguments() {
+        String[] args = getIntent().getStringArrayExtra(EXTRA_ARGS);
+        return args != null ? args : new String[0];
     }
 }

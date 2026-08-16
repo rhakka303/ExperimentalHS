@@ -10,6 +10,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -115,6 +116,10 @@ private fun HypdroidApp(context: Context) {
         } else {
             pathResolutionFailed = false
             gameFolderPath = realPath
+            // hypseus hard-fails video init without its own pics/ assets in
+            // the home dir (confirmed via a real on-device boot test) - make
+            // sure they're there before anything tries to launch a game.
+            ensureHypseusAssets(context)
             // Scan automatically as soon as a folder is picked - no separate
             // manual "scan" action, per the owner's UX guidance.
             games = scanGames(File(realPath))
@@ -126,6 +131,14 @@ private fun HypdroidApp(context: Context) {
         pathResolutionFailed = pathResolutionFailed,
         games = games,
         onChooseFolder = { pickFolder.launch(null) },
+        onPlay = { game ->
+            val homeDir = gameFolderPath
+            if (homeDir != null) {
+                val intent = Intent(context, HypseusActivity::class.java)
+                    .putExtra(HypseusActivity.EXTRA_ARGS, buildLaunchArgs(game, homeDir))
+                context.startActivity(intent)
+            }
+        },
     )
 }
 
@@ -135,6 +148,7 @@ private fun HomeScreen(
     pathResolutionFailed: Boolean,
     games: List<Game>,
     onChooseFolder: () -> Unit,
+    onPlay: (Game) -> Unit,
 ) {
     // Empty-dashboard-with-a-"+"-button state, per the owner's UX guidance.
     // The full visual gallery (game tiles, box art) is Phase E; this is
@@ -169,11 +183,16 @@ private fun HomeScreen(
                 if (games.isEmpty()) {
                     Text("No games found in this folder.")
                 } else {
-                    Text("${games.size} game(s) found:")
+                    Text("${games.size} game(s) found - tap to play:")
                     Spacer(modifier = Modifier.height(8.dp))
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         games.forEach { game ->
-                            Text("${game.name}  (${game.category})")
+                            Text(
+                                "${game.name}  (${game.category})",
+                                modifier = Modifier
+                                    .clickable { onPlay(game) }
+                                    .padding(12.dp),
+                            )
                         }
                     }
                 }
