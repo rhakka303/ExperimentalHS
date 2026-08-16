@@ -25,10 +25,13 @@ import java.io.File
  * "vldp" (argv[2]) selects hypseus's software MPEG laserdisc-player
  * backend - always used here since there's no real LDP hardware.
  *
- * -homedir/-datadir are the PARENT of the picked/scanned game folder, not
- * the picked folder itself. Confirmed via a real Singe game's own unzipped
- * .singe script (every Singe/LaserForge game has this same pattern, not
- * specific to one game): it hardcodes BASEDIR = "singe" and does
+ * -homedir/-datadir differ by category, since the two categories expect
+ * genuinely different things to be relative to it:
+ *
+ * SINGE_ZIPPED/SINGE_SCRIPT need the PARENT of the picked/scanned game
+ * folder. Confirmed via a real Singe game's own unzipped .singe script
+ * (every Singe/LaserForge game has this same pattern, not specific to one
+ * game): it hardcodes BASEDIR = "singe" and does
  * dofile(BASEDIR .. "/Framework/globals.singe"), i.e. it expects the real
  * homedir to have a "singe" subfolder containing both the game and the
  * shared Framework code - exactly matching hypseus's own upstream doc
@@ -40,6 +43,17 @@ import java.io.File
  * Lua in a corrupted state that only crashed much later, inside an
  * unrelated-looking luaopen_os/strchr call - diagnosed via a real on-device
  * boot test and a full native crash backtrace, not guessed.
+ *
+ * DAPHNE_NATIVE needs the picked folder ITSELF, not its parent. hypseus's
+ * own ROM lookup (game.cpp's load_roms() -> homedir::get_romfile()) builds
+ * "<homedir>/roms/<name>.zip" - GameScanner.kt already scans for exactly
+ * that path relative to the picked folder (<home>/roms/<name>.zip,
+ * <home>/vldp/<name>/<name>.txt), confirmed working in #28. Applying the
+ * Singe "-homedir is the parent" rule here too made hypseus look one level
+ * too high (the picked folder's parent's own "roms/" - a real folder on a
+ * shared SD card that happens to also exist, just the wrong one), and it
+ * silently reported the ROM missing instead of crashing - diagnosed by
+ * reading get_romfile()/find_romfile() in homedir.cpp, not guessed either.
  */
 fun buildLaunchArgs(game: Game, homeDir: String): Array<String> {
     val args = mutableListOf<String>()
@@ -62,7 +76,10 @@ fun buildLaunchArgs(game: Game, homeDir: String): Array<String> {
         }
     }
 
-    val trueHomeDir = File(homeDir).parent ?: homeDir
+    val trueHomeDir = when (game.category) {
+        GameCategory.DAPHNE_NATIVE -> homeDir
+        GameCategory.SINGE_ZIPPED, GameCategory.SINGE_SCRIPT -> File(homeDir).parent ?: homeDir
+    }
     args += listOf("-homedir", "$trueHomeDir/", "-datadir", "$trueHomeDir/")
     // Baked-in defaults for every launch, per the owner: real fullscreen
     // gameplay, and SDL_Gamepad enabled (this is gamepad-first hardware).
