@@ -1630,7 +1630,6 @@ void sep_startup(const char *data)
     g_zlfs = new bool(false);
 
     g_se_lua_context = lua_open();
-    lua_gc(g_se_lua_context, LUA_GCSTOP, 0); // DIAGNOSTIC ONLY - confirming GC-trigger theory
     luaL_openlibs(g_se_lua_context);
     lua_atpanic(g_se_lua_context, sep_lua_error);
 
@@ -1905,7 +1904,6 @@ void sep_startup(const char *data)
         if (luaL_dofile(g_se_lua_context, data) != 0)
             sep_lua_failure(g_se_lua_context, NULL);
     }
-    lua_gc(g_se_lua_context, LUA_GCRESTART, 0); // DIAGNOSTIC ONLY
 }
 
 void sep_rom_compressed(void)
