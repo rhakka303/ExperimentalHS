@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.os.Environment
 import android.provider.DocumentsContract
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -20,7 +21,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
@@ -98,28 +101,31 @@ private fun resolveRealPath(treeUri: Uri): String? {
     return if (file.exists() && file.isDirectory) path else null
 }
 
-private enum class Screen { HOME }
+private enum class Screen { HOME, SETTINGS }
 
 private const val PREFS_NAME = "hypdroid_prefs"
 private const val PREF_GAME_FOLDER_URI = "game_folder_uri"
+private const val PREF_MEDIA_FOLDER_URI = "media_folder_uri"
 
-private fun savePersistedFolderUri(context: Context, uri: Uri) {
+// Generalized over a pref key so the same save/load/clear logic covers both
+// the game folder (#36) and the media folder (#30) without duplicating it.
+private fun savePersistedFolderUri(context: Context, key: String, uri: Uri) {
     context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         .edit()
-        .putString(PREF_GAME_FOLDER_URI, uri.toString())
+        .putString(key, uri.toString())
         .apply()
 }
 
-private fun clearPersistedFolderUri(context: Context) {
+private fun clearPersistedFolderUri(context: Context, key: String) {
     context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         .edit()
-        .remove(PREF_GAME_FOLDER_URI)
+        .remove(key)
         .apply()
 }
 
-private fun loadPersistedFolderUri(context: Context): Uri? {
+private fun loadPersistedFolderUri(context: Context, key: String): Uri? {
     val stored = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        .getString(PREF_GAME_FOLDER_URI, null) ?: return null
+        .getString(key, null) ?: return null
     val uri = Uri.parse(stored)
     // takePersistableUriPermission() survives restarts on its own, but not a
     // permission revocation (e.g. user cleared it in Android's own Settings)
@@ -133,17 +139,19 @@ private fun loadPersistedFolderUri(context: Context): Uri? {
 
 @Composable
 private fun HypdroidApp(context: Context) {
+    var currentScreen by remember { mutableStateOf(Screen.HOME) }
     var gameFolderPath by remember { mutableStateOf<String?>(null) }
     var pathResolutionFailed by remember { mutableStateOf(false) }
     var games by remember { mutableStateOf<List<Game>>(emptyList()) }
+    var mediaFolderPath by remember { mutableStateOf<String?>(null) }
 
-    fun applyFolder(uri: Uri) {
+    fun applyGameFolder(uri: Uri) {
         val realPath = resolveRealPath(uri)
         if (realPath == null) {
             pathResolutionFailed = true
             gameFolderPath = null
             games = emptyList()
-            clearPersistedFolderUri(context)
+            clearPersistedFolderUri(context, PREF_GAME_FOLDER_URI)
         } else {
             pathResolutionFailed = false
             gameFolderPath = realPath
@@ -157,24 +165,42 @@ private fun HypdroidApp(context: Context) {
         }
     }
 
-    // Re-resolve a previously-picked folder on every fresh launch, so the
-    // dashboard doesn't reset to empty on every restart/crash (#36) - the
-    // SAF grant itself already survives restarts via
-    // takePersistableUriPermission(), this just re-runs the same
-    // resolve+scan pipeline the picker uses, automatically.
-    LaunchedEffect(Unit) {
-        val persistedUri = loadPersistedFolderUri(context)
-        if (persistedUri == null) {
-            // Either nothing was ever picked, or the grant is no longer
-            // valid (revoked, SD card removed) - fall back to the empty
-            // "+" state rather than showing a stale/broken path.
-            clearPersistedFolderUri(context)
-        } else {
-            applyFolder(persistedUri)
+    fun applyMediaFolder(uri: Uri) {
+        // No scanning here - nothing consumes the media folder yet (that's
+        // Phase E). Just resolve + persist, same as the game folder, minus
+        // the game-specific side effects.
+        val realPath = resolveRealPath(uri)
+        mediaFolderPath = realPath
+        if (realPath == null) {
+            clearPersistedFolderUri(context, PREF_MEDIA_FOLDER_URI)
         }
     }
 
-    val pickFolder = rememberLauncherForActivityResult(
+    // Re-resolve previously-picked folders on every fresh launch, so the
+    // dashboard doesn't reset to empty on every restart/crash (#36) - the
+    // SAF grant itself already survives restarts via
+    // takePersistableUriPermission(), this just re-runs the same
+    // resolve(+scan) pipeline the pickers use, automatically.
+    LaunchedEffect(Unit) {
+        val persistedGameUri = loadPersistedFolderUri(context, PREF_GAME_FOLDER_URI)
+        if (persistedGameUri == null) {
+            // Either nothing was ever picked, or the grant is no longer
+            // valid (revoked, SD card removed) - fall back to the empty
+            // "+" state rather than showing a stale/broken path.
+            clearPersistedFolderUri(context, PREF_GAME_FOLDER_URI)
+        } else {
+            applyGameFolder(persistedGameUri)
+        }
+
+        val persistedMediaUri = loadPersistedFolderUri(context, PREF_MEDIA_FOLDER_URI)
+        if (persistedMediaUri == null) {
+            clearPersistedFolderUri(context, PREF_MEDIA_FOLDER_URI)
+        } else {
+            applyMediaFolder(persistedMediaUri)
+        }
+    }
+
+    val pickGameFolder = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree(),
     ) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
@@ -185,25 +211,51 @@ private fun HypdroidApp(context: Context) {
             uri,
             Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
         )
-        savePersistedFolderUri(context, uri)
-        applyFolder(uri)
+        savePersistedFolderUri(context, PREF_GAME_FOLDER_URI, uri)
+        applyGameFolder(uri)
     }
 
-    HomeScreen(
-        gameFolderPath = gameFolderPath,
-        pathResolutionFailed = pathResolutionFailed,
-        games = games,
-        onChooseFolder = { pickFolder.launch(null) },
-        onOpenSettings = { /* stub - real Settings screen is #30 */ },
-        onPlay = { game ->
-            val homeDir = gameFolderPath
-            if (homeDir != null) {
-                val intent = Intent(context, HypseusActivity::class.java)
-                    .putExtra(HypseusActivity.EXTRA_ARGS, buildLaunchArgs(game, homeDir))
-                context.startActivity(intent)
-            }
-        },
-    )
+    // Used from both the dashboard's "+" and Settings' "Game folder" row -
+    // same launcher instance, so both really do share one underlying value
+    // rather than each keeping their own copy (#30 acceptance criteria).
+    val onChooseGameFolder = { pickGameFolder.launch(null) }
+
+    val pickMediaFolder = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree(),
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        context.contentResolver.takePersistableUriPermission(
+            uri,
+            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+        )
+        savePersistedFolderUri(context, PREF_MEDIA_FOLDER_URI, uri)
+        applyMediaFolder(uri)
+    }
+
+    when (currentScreen) {
+        Screen.HOME -> HomeScreen(
+            gameFolderPath = gameFolderPath,
+            pathResolutionFailed = pathResolutionFailed,
+            games = games,
+            onChooseFolder = onChooseGameFolder,
+            onOpenSettings = { currentScreen = Screen.SETTINGS },
+            onPlay = { game ->
+                val homeDir = gameFolderPath
+                if (homeDir != null) {
+                    val intent = Intent(context, HypseusActivity::class.java)
+                        .putExtra(HypseusActivity.EXTRA_ARGS, buildLaunchArgs(game, homeDir))
+                    context.startActivity(intent)
+                }
+            },
+        )
+        Screen.SETTINGS -> SettingsScreen(
+            gameFolderPath = gameFolderPath,
+            mediaFolderPath = mediaFolderPath,
+            onChangeGameFolder = onChooseGameFolder,
+            onChangeMediaFolder = { pickMediaFolder.launch(null) },
+            onBack = { currentScreen = Screen.HOME },
+        )
+    }
 }
 
 @Composable
@@ -263,6 +315,85 @@ private fun HomeScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * #30's Settings screen: Game folder and Media folder pickers (reusing the
+ * exact same SAF pattern/persisted state as #36 for the game folder - not a
+ * separate copy), plus a stub "Controller Configuration" row that will be
+ * wired up by #41. There's no navigation-library backstack in this app (just
+ * a plain Screen enum toggle in HypdroidApp), so this screen has to handle
+ * its own way back to the dashboard: a back arrow in a simple top bar, and a
+ * BackHandler so Android's system back button returns to Home instead of
+ * falling through to exit the whole app.
+ */
+@Composable
+private fun SettingsScreen(
+    gameFolderPath: String?,
+    mediaFolderPath: String?,
+    onChangeGameFolder: () -> Unit,
+    onChangeMediaFolder: () -> Unit,
+    onBack: () -> Unit,
+) {
+    BackHandler(onBack = onBack)
+
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Settings", style = MaterialTheme.typography.titleLarge)
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        SettingsRow(
+            label = "Game folder",
+            subtitle = gameFolderPath ?: "Not set",
+            buttonLabel = "Change",
+            onClick = onChangeGameFolder,
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        SettingsRow(
+            label = "Media folder",
+            subtitle = mediaFolderPath ?: "Not set",
+            buttonLabel = "Change",
+            onClick = onChangeMediaFolder,
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // Real functionality is #41 - this row just needs to exist in the
+        // layout for now, per the same stub precedent #36 set for the gear
+        // icon itself.
+        SettingsRow(
+            label = "Controller Configuration",
+            subtitle = "Coming soon",
+            buttonLabel = "Configure",
+            onClick = { /* stub - real screen is #41 */ },
+        )
+    }
+}
+
+@Composable
+private fun SettingsRow(
+    label: String,
+    subtitle: String,
+    buttonLabel: String,
+    onClick: () -> Unit,
+) {
+    Column {
+        Text(label, style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(subtitle, style = MaterialTheme.typography.bodyMedium)
+        Spacer(modifier = Modifier.height(8.dp))
+        Button(onClick = onClick) {
+            Text(buttonLabel)
         }
     }
 }
