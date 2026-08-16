@@ -56,6 +56,38 @@ import java.io.File
  * genuinely scoped to exactly the folder(s) selected, nothing else.
  */
 class MainActivity : ComponentActivity() {
+    // #41 - set by ControllerConfigScreen only while it's actively listening
+    // for a capture. dispatchKeyEvent()/dispatchGenericMotionEvent() forward
+    // matching real input events here; both are null/false the rest of the
+    // time, so normal Activity input handling (e.g. Compose's own click
+    // handling) is completely unaffected outside that screen.
+    var gamepadCaptureListener: ((token: String) -> Unit)? = null
+    var gamepadCaptureListeningForAxis: Boolean = false
+
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        val listener = gamepadCaptureListener
+        if (listener != null) {
+            val token = captureTokenForKeyEvent(event, gamepadCaptureListeningForAxis)
+            if (token != null) {
+                listener(token)
+                return true
+            }
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    override fun dispatchGenericMotionEvent(event: android.view.MotionEvent): Boolean {
+        val listener = gamepadCaptureListener
+        if (listener != null) {
+            val token = captureTokenForMotionEvent(event, gamepadCaptureListeningForAxis)
+            if (token != null) {
+                listener(token)
+                return true
+            }
+        }
+        return super.dispatchGenericMotionEvent(event)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
@@ -101,7 +133,7 @@ private fun resolveRealPath(treeUri: Uri): String? {
     return if (file.exists() && file.isDirectory) path else null
 }
 
-private enum class Screen { HOME, SETTINGS }
+private enum class Screen { HOME, SETTINGS, CONTROLLER_CONFIG }
 
 private const val PREFS_NAME = "hypdroid_prefs"
 private const val PREF_GAME_FOLDER_URI = "game_folder_uri"
@@ -138,7 +170,7 @@ private fun loadPersistedFolderUri(context: Context, key: String): Uri? {
 }
 
 @Composable
-private fun HypdroidApp(context: Context) {
+private fun HypdroidApp(context: MainActivity) {
     var currentScreen by remember { mutableStateOf(Screen.HOME) }
     var gameFolderPath by remember { mutableStateOf<String?>(null) }
     var pathResolutionFailed by remember { mutableStateOf(false) }
@@ -253,8 +285,26 @@ private fun HypdroidApp(context: Context) {
             mediaFolderPath = mediaFolderPath,
             onChangeGameFolder = onChooseGameFolder,
             onChangeMediaFolder = { pickMediaFolder.launch(null) },
+            onOpenControllerConfig = { currentScreen = Screen.CONTROLLER_CONFIG },
             onBack = { currentScreen = Screen.HOME },
         )
+        Screen.CONTROLLER_CONFIG -> {
+            val homeDir = gameFolderPath
+            if (homeDir == null) {
+                // Shouldn't normally be reachable (the row that opens this
+                // screen only exists once a game folder is set), but fall
+                // back to Settings rather than crash if it somehow is - as
+                // a state change, this has to happen in an effect, not
+                // directly in the composable body.
+                LaunchedEffect(Unit) { currentScreen = Screen.SETTINGS }
+            } else {
+                ControllerConfigScreen(
+                    activity = context,
+                    gameFolderPath = homeDir,
+                    onBack = { currentScreen = Screen.SETTINGS },
+                )
+            }
+        }
     }
 }
 
@@ -322,12 +372,12 @@ private fun HomeScreen(
 /**
  * #30's Settings screen: Game folder and Media folder pickers (reusing the
  * exact same SAF pattern/persisted state as #36 for the game folder - not a
- * separate copy), plus a stub "Controller Configuration" row that will be
- * wired up by #41. There's no navigation-library backstack in this app (just
- * a plain Screen enum toggle in HypdroidApp), so this screen has to handle
- * its own way back to the dashboard: a back arrow in a simple top bar, and a
- * BackHandler so Android's system back button returns to Home instead of
- * falling through to exit the whole app.
+ * separate copy), plus a "Controller Configuration" row opening #41's live
+ * gamepad-mapping screen. There's no navigation-library backstack in this
+ * app (just a plain Screen enum toggle in HypdroidApp), so this screen has
+ * to handle its own way back to the dashboard: a back arrow in a simple top
+ * bar, and a BackHandler so Android's system back button returns to Home
+ * instead of falling through to exit the whole app.
  */
 @Composable
 private fun SettingsScreen(
@@ -335,6 +385,7 @@ private fun SettingsScreen(
     mediaFolderPath: String?,
     onChangeGameFolder: () -> Unit,
     onChangeMediaFolder: () -> Unit,
+    onOpenControllerConfig: () -> Unit,
     onBack: () -> Unit,
 ) {
     BackHandler(onBack = onBack)
@@ -368,14 +419,16 @@ private fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Real functionality is #41 - this row just needs to exist in the
-        // layout for now, per the same stub precedent #36 set for the gear
-        // icon itself.
         SettingsRow(
             label = "Controller Configuration",
-            subtitle = "Coming soon",
+            subtitle = if (gameFolderPath == null) {
+                "Set a game folder first"
+            } else {
+                "Assign gamepad buttons per action"
+            },
             buttonLabel = "Configure",
-            onClick = { /* stub - real screen is #41 */ },
+            onClick = onOpenControllerConfig,
+            enabled = gameFolderPath != null,
         )
     }
 }
@@ -386,13 +439,14 @@ private fun SettingsRow(
     subtitle: String,
     buttonLabel: String,
     onClick: () -> Unit,
+    enabled: Boolean = true,
 ) {
     Column {
         Text(label, style = MaterialTheme.typography.titleMedium)
         Spacer(modifier = Modifier.height(4.dp))
         Text(subtitle, style = MaterialTheme.typography.bodyMedium)
         Spacer(modifier = Modifier.height(8.dp))
-        Button(onClick = onClick) {
+        Button(onClick = onClick, enabled = enabled) {
             Text(buttonLabel)
         }
     }
