@@ -50,6 +50,12 @@ using namespace std;
 #endif
 
 #include <SDL3/SDL.h>
+#ifdef ANDROID
+// SDL3's Android JNI glue looks up main() by the symbol name "SDL_main" -
+// SDL_main.h's macro magic renames it at compile time. Desktop builds run
+// main() directly via the OS and don't need this.
+#include <SDL3/SDL_main.h>
+#endif
 #include <SDL3_image/SDL_image.h>
 #include <SDL3_mixer/SDL_mixer.h>
 

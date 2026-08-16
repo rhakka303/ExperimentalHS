@@ -13,10 +13,27 @@ android {
         versionName "1.0"
         externalNativeBuild {
             cmake {
-                arguments "-DANDROID_PLATFORM=android-21", "-DANDROID_STL=c++_static"
-                // arm64-v8a is the real target (Retroid Pocket 5 / SBCs); x86_64 is
-                // included only so this builds/runs on the Windows dev emulator.
-                abiFilters 'arm64-v8a', 'x86_64'
+                // android-28 matches what Phase B's vcpkg triplet and the
+                // manually-built libmpeg2 already target - kept consistent.
+                //
+                // AGP passes its own -DCMAKE_TOOLCHAIN_FILE (the NDK's
+                // android.toolchain.cmake) before these arguments; ours
+                // overrides it since vcpkg.cmake chain-loads the NDK
+                // toolchain internally (VCPKG_CHAINLOAD_TOOLCHAIN_FILE) -
+                // this is required so find_package() resolves against
+                // vcpkg's arm64-android packages instead of failing outright.
+                arguments "-DANDROID_PLATFORM=android-28",
+                    "-DANDROID_STL=c++_static",
+                    "-DCMAKE_TOOLCHAIN_FILE=D:/Claude Code/Hypdroid/vcpkg/scripts/buildsystems/vcpkg.cmake",
+                    "-DVCPKG_TARGET_TRIPLET=arm64-android",
+                    "-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=C:/Users/rhakk/AppData/Local/Android/Sdk/ndk/30.0.15729638/build/cmake/android.toolchain.cmake",
+                    "-DPKG_CONFIG_EXECUTABLE=C:/Users/rhakk/msys2-buildtools/usr/bin/pkg-config.exe"
+                // arm64-v8a only: Phase B's vcpkg dependencies were built
+                // exclusively for the arm64-android triplet (matching the
+                // real target hardware - Retroid Pocket 5 / SBCs), not
+                // x86_64. An arm64-v8a emulator image is used for
+                // on-device verification instead of x86_64.
+                abiFilters 'arm64-v8a'
             }
         }
     }
@@ -36,7 +53,15 @@ android {
         }
         externalNativeBuild {
             cmake {
-                path 'jni/CMakeLists.txt'
+                // Points directly at hypseus's own CMakeLists.txt rather
+                // than wrapping it via a jni/CMakeLists.txt add_subdirectory()
+                // - hypseus's build uses CMAKE_SOURCE_DIR (the true top-level
+                // project dir) internally (e.g. cmake/modules lookup), which
+                // breaks under add_subdirectory() since that doesn't change
+                // what CMAKE_SOURCE_DIR means. Pointing here directly keeps
+                // hypseus as the actual top-level project, matching how it
+                // was verified working in #19/#20.
+                path '../../hypseus-singe/src/CMakeLists.txt'
             }
         }
     }
