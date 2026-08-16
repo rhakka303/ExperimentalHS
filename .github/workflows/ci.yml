@@ -35,7 +35,12 @@ jobs:
       - name: Lint Markdown files
         uses: DavidAnson/markdownlint-cli2-action@v17
         with:
-          globs: "**/*.md"
+          # Only lint our own docs - vendored third-party source
+          # (hypseus-singe, and anything similar added later) isn't ours
+          # to reformat.
+          globs: |
+            **/*.md
+            !hypseus-singe/**
 
 # A Gradle/NDK build-and-test job belongs here once the Android project
 # exists (Phase A/C of the project plan) — tracked separately, not a

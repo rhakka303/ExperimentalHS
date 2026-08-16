@@ -4,6 +4,3 @@
 [submodule "sdl"]
 	path = sdl
 	url = https://github.com/libsdl-org/SDL.git
-[submodule "hypseus-singe"]
-	path = hypseus-singe
-	url = https://github.com/DirtBagXon/hypseus-singe.git
