@@ -296,6 +296,7 @@ Wires up the "Controller Configuration" row from #30 with a real screen for view
 **Conflict warning, not silent duplicate binding.** Reassigning an input already used elsewhere shows which action currently owns it before committing - confirmed still allowed either way, matching the acceptance criteria ("allowed if confirmed, just not silent").
 
 **Two real bugs found and fixed while testing this feature, both scoped beyond just #41:**
+
 - **Touch scrolling didn't work anywhere in the Compose UI - only d-pad/focus-based scrolling did.** Root cause: `AndroidManifest.xml`'s `android:hardwareAccelerated="false"` was set at the `<application>` level, disabling hardware acceleration for the *entire app* - including `MainActivity`'s pure-Compose UI, which has nothing to do with the SDL/GL crash that flag was actually added for (see Phase C notes). Fixed by moving the flag onto `HypseusActivity`'s own `<activity>` element specifically, leaving the rest of the app (and Compose's gesture handling) hardware-accelerated as normal. Confirmed fixed: the owner tested real finger-swipe scrolling on-device after the fix and it worked correctly, both here and generally.
 - **`LazyColumn` had no size modifier**, leaving its scroll gestures unreliably bound. Fixed with `Modifier.weight(1f)` inside the containing `Column`.
 
