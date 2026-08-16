@@ -94,6 +94,7 @@ private enum class Screen { HOME }
 private fun HypdroidApp(context: Context) {
     var gameFolderPath by remember { mutableStateOf<String?>(null) }
     var pathResolutionFailed by remember { mutableStateOf(false) }
+    var games by remember { mutableStateOf<List<Game>>(emptyList()) }
 
     val pickFolder = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree(),
@@ -110,15 +111,20 @@ private fun HypdroidApp(context: Context) {
         if (realPath == null) {
             pathResolutionFailed = true
             gameFolderPath = null
+            games = emptyList()
         } else {
             pathResolutionFailed = false
             gameFolderPath = realPath
+            // Scan automatically as soon as a folder is picked - no separate
+            // manual "scan" action, per the owner's UX guidance.
+            games = scanGames(File(realPath))
         }
     }
 
     HomeScreen(
         gameFolderPath = gameFolderPath,
         pathResolutionFailed = pathResolutionFailed,
+        games = games,
         onChooseFolder = { pickFolder.launch(null) },
     )
 }
@@ -127,11 +133,12 @@ private fun HypdroidApp(context: Context) {
 private fun HomeScreen(
     gameFolderPath: String?,
     pathResolutionFailed: Boolean,
+    games: List<Game>,
     onChooseFolder: () -> Unit,
 ) {
     // Empty-dashboard-with-a-"+"-button state, per the owner's UX guidance.
     // The full visual gallery (game tiles, box art) is Phase E; this is
-    // just the folder-picking mechanics Phase D is actually responsible for.
+    // just a plain list - the scanning mechanics are Phase D's job (#28).
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             if (pathResolutionFailed) {
@@ -157,6 +164,18 @@ private fun HomeScreen(
                 Spacer(modifier = Modifier.height(16.dp))
                 Button(onClick = onChooseFolder) {
                     Text("Change Game Folder")
+                }
+                Spacer(modifier = Modifier.height(24.dp))
+                if (games.isEmpty()) {
+                    Text("No games found in this folder.")
+                } else {
+                    Text("${games.size} game(s) found:")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        games.forEach { game ->
+                            Text("${game.name}  (${game.category})")
+                        }
+                    }
                 }
             }
         }
