@@ -77,8 +77,7 @@
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="true"
         android:theme="@style/AppTheme"
-        android:enableOnBackInvokedCallback="false"
-        android:hardwareAccelerated="false" >
+        android:enableOnBackInvokedCallback="false" >
 
         <!-- Example of setting SDL hints from AndroidManifest.xml:
         <meta-data android:name="SDL_ENV.SDL_ANDROID_TRAP_BACK_BUTTON" android:value="0"/>
@@ -106,6 +105,7 @@
             android:configChanges="layoutDirection|locale|grammaticalGender|fontScale|fontWeightAdjustment|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
             android:preferMinimalPostProcessing="true"
             android:exported="true"
+            android:hardwareAccelerated="false"
             >
             <!-- Let Android know that we can handle some USB devices and should receive this event -->
             <intent-filter>
