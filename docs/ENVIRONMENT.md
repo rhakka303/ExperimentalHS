@@ -96,7 +96,7 @@ libzip.a         Machine: AArch64
 
 ## libmpeg2 (built from hypseus's vendored source, not vcpkg)
 
-hypseus's `.m2v` laserdisc video decode uses its own vendored `libmpeg2` (`hypseus-singe/src/3rdparty/libmpeg2/libmpeg2-master.tgz`), built via autotools (`configure`/`make`), not CMake and not a vcpkg port. `hypseus-singe/` is vendored here as a git submodule too, pinned to `v3.0.1`.
+hypseus's `.m2v` laserdisc video decode uses its own vendored `libmpeg2` (`hypseus-singe/src/3rdparty/libmpeg2/libmpeg2-master.tgz`), built via autotools (`configure`/`make`), not CMake and not a vcpkg port. `hypseus-singe/` is vendored here as plain tracked files (not a submodule — Phase C modifies its `CMakeLists.txt` directly, and a submodule can't hold local-only commits reproducibly since it fetches from upstream's own URL), pinned to `v3.0.1`.
 
 **Real obstacle hit:** the same class of problem as the OpenSSL/libzip issue above, but worse — this whole toolchain (`libtoolize`, `autoreconf`, `configure`, `make`) is shell-script-driven, and vcpkg's own downloaded MSYS2 environment lives under this project's path (`D:/Claude Code/Hypdroid/vcpkg/downloads/tools/msys2/...`), which contains a space. `configure` broke immediately trying to find `ld` via `$PATH`, silently word-splitting the space and producing a truncated, nonexistent path. This isn't a vcpkg port bug — it's a structural conflict between this project's path and any shell-script-based (autotools) build.
 
@@ -126,3 +126,30 @@ make install
 Result: clean install layout (`include/mpeg2dec/*.h`, `lib/libmpeg2.a`, `lib/libmpeg2convert.a`) matching exactly what `BuildLibMPEG2.cmake` expects (`MPEG2_INCLUDE_DIRS`, `MPEG2_LIBRARIES`). Verified genuine AArch64 via `llvm-readelf -h` on the installed `libmpeg2.a`.
 
 All of Phase B's dependencies are now cross-compiled and verified for `arm64-android`.
+
+**Final destination for Phase C:** copy the installed `include/` and `lib/` directories into `prebuilt/libmpeg2/arm64-v8a/` at the repo root (gitignored, reproducible via the recipe above) — that's the path hypseus's Android CMake target (see below) expects.
+
+## Phase C — CMake configure for the Android target
+
+With Phase B's dependencies in place, hypseus's own `CMakeLists.txt` configures successfully for Android. Two changes were needed beyond the dependency setup:
+
+1. **`src/CMakeLists.txt`**: added an `if(ANDROID)` branch producing `add_library(main SHARED hypseus.cpp globals.h)` instead of `add_executable(hypseus ...)` (SDL3's Android JNI shell loads the app via `System.loadLibrary("main")`, not as a standalone process). Also replaced the unconditional `build_libmpeg2()` call (which triggers an autotools `ExternalProject_Add` mid-configure — fragile to cross-compile automatically) with a direct reference to the pre-built `prebuilt/libmpeg2/arm64-v8a/` artifact on Android, keeping the original autotools path for non-Android builds.
+2. **`src/ldp-out/CMakeLists.txt`**: its `PKG_SEARCH_MODULE(VORBISFILE REQUIRED vorbisfile)` call broke on Android — pkg-config successfully found `vorbisfile.pc`, but CMake's `FindPkgConfig` module choked parsing pkg-config's Windows-style backslash+space output (this project's path contains a space) as an invalid escape sequence. Fixed by skipping `PKG_SEARCH_MODULE` on Android entirely and using the `Vorbis::vorbisfile` imported target that vcpkg's own `FindVorbis.cmake` module already provides (via plain `find_library`/`find_path`, unaffected by the pkg-config parsing issue) from the `find_package(Vorbis REQUIRED)` call directly below it.
+
+Configure invocation:
+
+```powershell
+cmake -S hypseus-singe/src -B build-android `
+  -DCMAKE_TOOLCHAIN_FILE="vcpkg/scripts/buildsystems/vcpkg.cmake" `
+  -DVCPKG_TARGET_TRIPLET=arm64-android `
+  -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE="$env:ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" `
+  -DANDROID_ABI=arm64-v8a `
+  -DANDROID_PLATFORM=android-28 `
+  -DCMAKE_MAKE_PROGRAM="$env:ANDROID_HOME/cmake/4.1.2/bin/ninja.exe" `
+  -DPKG_CONFIG_EXECUTABLE="C:\Users\rhakk\msys2-buildtools\usr\bin\pkg-config.exe" `
+  -G Ninja
+```
+
+Result: **configure succeeds cleanly**, no errors. Confirmed via the generated `build.ninja` that a `libmain.so` shared-library target exists with the full dependency graph correctly wired — every vcpkg-installed library (SDL3 family, Vorbis/vorbisfile, libzip), the pre-built `libmpeg2.a`, and all of hypseus's own module static libraries (`plog`, `io`, `timer`, `sound`, `video`, `cpu`, `game`, `ldp-out`, `scoreboard`, `manymouse`, `ldp-in`, `vldp`, `singeproxy`).
+
+Actually compiling the full source tree (likely to surface real portability issues — hypseus is developed against Linux/Windows/macOS/Raspberry Pi, not Android/Bionic) is separate, tracked work — see the project's issue tracker.

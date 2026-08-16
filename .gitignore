@@ -21,6 +21,9 @@ CMakeFiles/
 CMakeCache.txt
 cmake-build-*/
 
+# Pre-built native artifacts (reproducible via docs/ENVIRONMENT.md, not committed)
+prebuilt/
+
 # OS
 .DS_Store
 Thumbs.db
