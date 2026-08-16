@@ -254,3 +254,15 @@ With a complete ROM transfer in place, the Daphne-native game still failed to la
 **Fix:** `buildLaunchArgs()` in `LaunchArgs.kt` now branches `-homedir`/`-datadir` by category - the picked folder's parent for `SINGE_ZIPPED`/`SINGE_SCRIPT` (unchanged from Bug 4), the picked folder itself for `DAPHNE_NATIVE`.
 
 **Result, verified on the physical Retroid Pocket 5:** the Daphne-native game's ROM loads, video parsing completes, and the game reaches its real attract-mode/scoreboard screen with full-motion video and the overlay scoreboard rendering correctly - confirmed via screenshot, not just log inspection.
+
+## Phase D - persist picked game folder + dashboard redesign (#36)
+
+Before this, the picked game folder lived only in Compose's in-memory `remember { mutableStateOf(...) }` state in `MainActivity` - any process restart (including the known #35 crash, before it was fixed) reset the dashboard to empty, forcing the SAF folder picker to be re-run from scratch every time.
+
+**Persistence:** the picked folder's SAF tree `Uri` is now saved to a plain `SharedPreferences` entry (`hypdroid_prefs` / `game_folder_uri`) whenever a folder is picked. On every launch, a `LaunchedEffect` reads it back and re-runs the same `resolveRealPath()` + `scanGames()` pipeline the picker itself uses - no separate persistence-specific code path, no re-pick needed. The underlying SAF grant (`takePersistableUriPermission()`, from #27) already survives restarts on its own; this just re-applies it automatically instead of requiring the user to manually re-pick the same folder.
+
+**Graceful fallback if the grant no longer holds:** `contentResolver.persistedUriPermissions` is checked as the actual source of truth before trusting the saved URI - it's possible for a `SharedPreferences` entry to outlive its real SAF grant (permission revoked in Android's own Settings, SD card removed/swapped). If the check fails, or if `resolveRealPath()` can't produce a real path for it, the saved URI is cleared and the app falls back to the ordinary empty "+" state - no crash, no stale/broken path shown.
+
+**Dashboard redesign, per the owner's spec:** the raw folder-path text and "Change Game Folder" button are gone from `HomeScreen` entirely. In their place, a `Row` of two `IconButton`s sits in the top-right corner: a "+" (`Icons.Filled.Add`) to pick/change the game folder, and a gear (`Icons.Filled.Settings`) as a placeholder entry point for #30's future Settings screen (currently a no-op stub - #30's actual scope is unaffected). The game list itself stays on the main dashboard, unchanged in behavior.
+
+**Result, verified on the physical Retroid Pocket 5:** picked the game folder once (all 3 previously-detected games listed, no path text visible anywhere, `+`/gear icons present top-right), then `am force-stop` + relaunched the app - the same 3 games reappeared immediately with no re-pick and no crash in `adb logcat`.
