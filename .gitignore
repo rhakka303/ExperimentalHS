@@ -24,3 +24,6 @@ cmake-build-*/
 # OS
 .DS_Store
 Thumbs.db
+
+# Claude's private working memory (not for the tracked repo history)
+CLAUDEMEMORY.md

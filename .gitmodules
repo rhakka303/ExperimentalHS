@@ -1,3 +1,6 @@
 [submodule "vcpkg"]
 	path = vcpkg
 	url = https://github.com/microsoft/vcpkg.git
+[submodule "sdl"]
+	path = sdl
+	url = https://github.com/libsdl-org/SDL.git
