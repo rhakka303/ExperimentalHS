@@ -27,3 +27,6 @@ Thumbs.db
 
 # Claude's private working memory (not for the tracked repo history)
 CLAUDEMEMORY.md
+
+# Internal workflow notes - kept locally, not shown to public repo visitors
+CONTRIBUTING.md
