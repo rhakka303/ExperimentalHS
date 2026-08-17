@@ -352,3 +352,11 @@ The regression noted (but deliberately deferred) during #31's work - fixed as it
 ## Dashboard wordmark logo
 
 Added the `HYPDROID` wordmark (`asset/Hypdroid_Logo_YXBA.png`, already in the repo from the earlier icon/name work) to the dashboard's upper-left corner, balancing the "+"/gear icons on the right. Copied into `android/app/src/main/res/drawable/hypdroid_logo.png` (Android resource names must be lowercase/alphanumeric - the source filename doesn't qualify as-is) and rendered via a plain `Image`/`painterResource`, sized to `40.dp` height with its aspect ratio preserved. Declared after the carousel `Box` in `HomeScreen`, matching the same declaration-order convention the icon `Row` fix just established - not required for a non-interactive image, but keeps the pattern consistent. Verified on the physical Retroid Pocket 5.
+
+## Fix: carousel resets to first game after backing out of per-game Options (#52)
+
+`GameCarousel`'s `pagerState` was `remember`ed inside `GameCarousel` itself. Since `HomeScreen`/`GameCarousel` only exist in composition while `currentScreen == Screen.Home`, navigating to `Screen.GameOptionsFor` (#31) tore that whole subtree down - and recomposing back into `Screen.Home` created a brand new `pagerState` starting at its default page (0), discarding whatever game had been focused.
+
+**Fix:** hoisted the current page to a `carouselPage` state in `HypdroidApp`, which survives screen navigation (it's never torn down, unlike `HomeScreen`). Passed down to `GameCarousel` as `initialPage`; a `LaunchedEffect` collecting `snapshotFlow { pagerState.currentPage }` syncs it back up to `HypdroidApp` on every page change (swipe, d-pad, or otherwise), so the next time `Screen.Home` recomposes, the new `pagerState` starts at the restored page instead of 0.
+
+**Result, verified on the physical Retroid Pocket 5:** focused the 3rd game (`ace`) in the carousel, pressed down to open its Options screen, backed out - the carousel was still showing `ace`, not reset to the first game.

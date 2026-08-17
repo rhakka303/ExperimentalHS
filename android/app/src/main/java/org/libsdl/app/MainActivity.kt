@@ -51,6 +51,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -218,6 +219,13 @@ private fun HypdroidApp(context: MainActivity) {
     // GameOptionsScreen show up immediately (e.g. the carousel's cover art)
     // without needing a rescan.
     var gameOptionsMap by remember { mutableStateOf<Map<String, GameOptions>>(emptyMap()) }
+    // #52 fix - GameCarousel's own pagerState lives inside GameCarousel,
+    // which (along with the rest of HomeScreen) is torn down entirely
+    // whenever currentScreen leaves Screen.Home - so the focused page was
+    // being lost every time the per-game Options screen (#31) was opened
+    // and backed out of. Hoisting the current page here, one level up in a
+    // composable that survives screen navigation, lets it be restored.
+    var carouselPage by remember { mutableStateOf(0) }
 
     LaunchedEffect(games) {
         gameOptionsMap = games.associate { it.name to loadGameOptions(context, it.name) }
@@ -321,6 +329,8 @@ private fun HypdroidApp(context: MainActivity) {
             pathResolutionFailed = pathResolutionFailed,
             games = games,
             gameOptionsMap = gameOptionsMap,
+            carouselPage = carouselPage,
+            onCarouselPageChanged = { carouselPage = it },
             onChooseFolder = onChooseGameFolder,
             onOpenSettings = { currentScreen = Screen.Settings },
             onOpenOptions = { game -> currentScreen = Screen.GameOptionsFor(game.name) },
@@ -409,6 +419,8 @@ private fun HomeScreen(
     pathResolutionFailed: Boolean,
     games: List<Game>,
     gameOptionsMap: Map<String, GameOptions>,
+    carouselPage: Int,
+    onCarouselPageChanged: (Int) -> Unit,
     onChooseFolder: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenOptions: (Game) -> Unit,
@@ -444,6 +456,8 @@ private fun HomeScreen(
                     games = games,
                     mediaFolderPath = mediaFolderPath,
                     gameOptionsMap = gameOptionsMap,
+                    initialPage = carouselPage,
+                    onPageChanged = onCarouselPageChanged,
                     onPlay = onPlay,
                     onOpenOptions = onOpenOptions,
                 )
@@ -494,10 +508,23 @@ private fun GameCarousel(
     games: List<Game>,
     mediaFolderPath: String?,
     gameOptionsMap: Map<String, GameOptions>,
+    initialPage: Int,
+    onPageChanged: (Int) -> Unit,
     onPlay: (Game) -> Unit,
     onOpenOptions: (Game) -> Unit,
 ) {
-    val pagerState = rememberPagerState(pageCount = { games.size })
+    // #52 fix - restores whatever page was focused before navigating away
+    // (e.g. to #31's Options screen and back), instead of always starting
+    // over at page 0 - this composable itself gets torn down and recreated
+    // on every trip through Screen.Home, so the initial value has to come
+    // from outside (HypdroidApp), not this function's own remembered state.
+    val pagerState = rememberPagerState(
+        initialPage = initialPage.coerceIn(0, (games.size - 1).coerceAtLeast(0)),
+        pageCount = { games.size },
+    )
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.currentPage }.collect { onPageChanged(it) }
+    }
     val coroutineScope = rememberCoroutineScope()
     // HorizontalPager doesn't respond to d-pad left/right on its own the
     // way LazyColumn responds to up/down "for free" (Compose's built-in
