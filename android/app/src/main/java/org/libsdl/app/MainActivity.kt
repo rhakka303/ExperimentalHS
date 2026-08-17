@@ -43,6 +43,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -172,7 +173,9 @@ private sealed class Screen {
     data class GameOptionsFor(val gameName: String) : Screen()
 }
 
-private const val PREFS_NAME = "hypdroid_prefs"
+// Not private - #47's global Cover Art prefs (GameOptions.kt) live in this
+// same prefs file, alongside the folder paths below.
+const val PREFS_NAME = "hypdroid_prefs"
 private const val PREF_GAME_FOLDER_URI = "game_folder_uri"
 private const val PREF_MEDIA_FOLDER_URI = "media_folder_uri"
 
@@ -226,6 +229,11 @@ private fun HypdroidApp(context: MainActivity) {
     // and backed out of. Hoisting the current page here, one level up in a
     // composable that survives screen navigation, lets it be restored.
     var carouselPage by remember { mutableStateOf(0) }
+    // #47 - Global Cover Art override (Settings). Plain synchronous
+    // SharedPreferences reads, unlike the folder pickers above, so no
+    // LaunchedEffect needed - the initial remember{} read is enough.
+    var globalCoverArtEnabled by remember { mutableStateOf(loadGlobalCoverArtEnabled(context)) }
+    var globalCoverArtType by remember { mutableStateOf(loadGlobalCoverArtType(context)) }
 
     LaunchedEffect(games) {
         gameOptionsMap = games.associate { it.name to loadGameOptions(context, it.name) }
@@ -329,6 +337,8 @@ private fun HypdroidApp(context: MainActivity) {
             pathResolutionFailed = pathResolutionFailed,
             games = games,
             gameOptionsMap = gameOptionsMap,
+            globalCoverArtEnabled = globalCoverArtEnabled,
+            globalCoverArtType = globalCoverArtType,
             carouselPage = carouselPage,
             onCarouselPageChanged = { carouselPage = it },
             onChooseFolder = onChooseGameFolder,
@@ -354,8 +364,18 @@ private fun HypdroidApp(context: MainActivity) {
         Screen.Settings -> SettingsScreen(
             gameFolderPath = gameFolderPath,
             mediaFolderPath = mediaFolderPath,
+            globalCoverArtEnabled = globalCoverArtEnabled,
+            globalCoverArtType = globalCoverArtType,
             onChangeGameFolder = onChooseGameFolder,
             onChangeMediaFolder = { pickMediaFolder.launch(null) },
+            onGlobalCoverArtToggle = { enabled ->
+                saveGlobalCoverArtEnabled(context, enabled)
+                globalCoverArtEnabled = enabled
+            },
+            onGlobalCoverArtTypeChange = { type ->
+                saveGlobalCoverArtType(context, type)
+                globalCoverArtType = type
+            },
             onOpenControllerConfig = { currentScreen = Screen.ControllerConfig },
             onBack = { currentScreen = Screen.Home },
         )
@@ -387,6 +407,7 @@ private fun HypdroidApp(context: MainActivity) {
                 GameOptionsScreen(
                     game = game,
                     options = options,
+                    globalCoverArtEnabled = globalCoverArtEnabled,
                     onCoverArtChange = { type ->
                         saveCoverArt(context, game.name, type)
                         updateGameOptions(game.name, options.copy(coverArt = type))
@@ -419,6 +440,8 @@ private fun HomeScreen(
     pathResolutionFailed: Boolean,
     games: List<Game>,
     gameOptionsMap: Map<String, GameOptions>,
+    globalCoverArtEnabled: Boolean,
+    globalCoverArtType: CoverArtType,
     carouselPage: Int,
     onCarouselPageChanged: (Int) -> Unit,
     onChooseFolder: () -> Unit,
@@ -456,6 +479,8 @@ private fun HomeScreen(
                     games = games,
                     mediaFolderPath = mediaFolderPath,
                     gameOptionsMap = gameOptionsMap,
+                    globalCoverArtEnabled = globalCoverArtEnabled,
+                    globalCoverArtType = globalCoverArtType,
                     initialPage = carouselPage,
                     onPageChanged = onCarouselPageChanged,
                     onPlay = onPlay,
@@ -508,6 +533,8 @@ private fun GameCarousel(
     games: List<Game>,
     mediaFolderPath: String?,
     gameOptionsMap: Map<String, GameOptions>,
+    globalCoverArtEnabled: Boolean,
+    globalCoverArtType: CoverArtType,
     initialPage: Int,
     onPageChanged: (Int) -> Unit,
     onPlay: (Game) -> Unit,
@@ -571,7 +598,15 @@ private fun GameCarousel(
         val game = games[page]
         val pageOffset = ((pagerState.currentPage - page) + pagerState.currentPageOffsetFraction).absoluteValue
         val scale = lerp(0.82f, 1f, 1f - pageOffset.coerceIn(0f, 1f))
-        val coverArtOverride = gameOptionsMap[game.name]?.coverArt
+        // #47 - Global Cover Art (Settings) wins over each game's own #31
+        // choice while it's on; resolveCoverArtFile's fallback-to-BOX
+        // behavior only kicks in for the null (no override at all) case, so
+        // this always passes a concrete type when global is enabled.
+        val coverArtOverride = if (globalCoverArtEnabled) {
+            globalCoverArtType
+        } else {
+            gameOptionsMap[game.name]?.coverArt
+        }
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             GameCard(
                 game = game,
@@ -649,12 +684,18 @@ private fun GameCard(
 private fun SettingsScreen(
     gameFolderPath: String?,
     mediaFolderPath: String?,
+    globalCoverArtEnabled: Boolean,
+    globalCoverArtType: CoverArtType,
     onChangeGameFolder: () -> Unit,
     onChangeMediaFolder: () -> Unit,
+    onGlobalCoverArtToggle: (Boolean) -> Unit,
+    onGlobalCoverArtTypeChange: (CoverArtType) -> Unit,
     onOpenControllerConfig: () -> Unit,
     onBack: () -> Unit,
 ) {
     BackHandler(onBack = onBack)
+
+    var showGlobalCoverArtPicker by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -685,6 +726,34 @@ private fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
+        // #47 - global override for every game's Cover Art at once, instead
+        // of setting each one individually via #31's per-game screen. Off by
+        // default, matching #31's existing per-game behavior until this was
+        // added.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Global Cover Art", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "On: same art for every game. Off: each game picks its own.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            Switch(checked = globalCoverArtEnabled, onCheckedChange = onGlobalCoverArtToggle)
+        }
+        if (globalCoverArtEnabled) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    globalCoverArtType.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                Button(onClick = { showGlobalCoverArtPicker = true }) { Text("Change") }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
         SettingsRow(
             label = "Controller Configuration",
             subtitle = if (gameFolderPath == null) {
@@ -695,6 +764,16 @@ private fun SettingsScreen(
             buttonLabel = "Configure",
             onClick = onOpenControllerConfig,
             enabled = gameFolderPath != null,
+        )
+    }
+
+    if (showGlobalCoverArtPicker) {
+        CoverArtPickerDialog(
+            onSelect = { type ->
+                onGlobalCoverArtTypeChange(type)
+                showGlobalCoverArtPicker = false
+            },
+            onDismiss = { showGlobalCoverArtPicker = false },
         )
     }
 }

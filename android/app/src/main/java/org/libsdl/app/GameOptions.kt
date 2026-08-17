@@ -92,3 +92,41 @@ fun bezelLaunchArgs(mediaFolderPath: String?, gameName: String): List<String> {
     val bezelDir = File(mediaFolderPath, "bezel").absolutePath
     return listOf("-bezeldir", bezelDir, "-bezel", "$gameName.png")
 }
+
+// #47 - Global Cover Art override. App-wide, not per-game, so it lives in
+// the same PREFS_NAME file as the folder paths rather than GAME_OPTIONS_PREFS
+// above (which is keyed per-game and cleared/rescanned with the game list).
+private const val PREF_GLOBAL_COVER_ART_ENABLED = "global_cover_art_enabled"
+private const val PREF_GLOBAL_COVER_ART_TYPE = "global_cover_art_type"
+
+fun loadGlobalCoverArtEnabled(context: Context): Boolean {
+    return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .getBoolean(PREF_GLOBAL_COVER_ART_ENABLED, false)
+}
+
+fun saveGlobalCoverArtEnabled(context: Context, enabled: Boolean) {
+    context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .edit()
+        .putBoolean(PREF_GLOBAL_COVER_ART_ENABLED, enabled)
+        .apply()
+}
+
+fun loadGlobalCoverArtType(context: Context): CoverArtType {
+    val stored = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .getString(PREF_GLOBAL_COVER_ART_TYPE, null)
+    val parsed = stored?.let {
+        try {
+            CoverArtType.valueOf(it)
+        } catch (e: IllegalArgumentException) {
+            null
+        }
+    }
+    return parsed ?: CoverArtType.BOX
+}
+
+fun saveGlobalCoverArtType(context: Context, type: CoverArtType) {
+    context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .edit()
+        .putString(PREF_GLOBAL_COVER_ART_TYPE, type.name)
+        .apply()
+}
