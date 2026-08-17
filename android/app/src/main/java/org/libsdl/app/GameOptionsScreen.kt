@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 fun GameOptionsScreen(
     game: Game,
     options: GameOptions,
+    globalCoverArtEnabled: Boolean,
     onCoverArtChange: (CoverArtType) -> Unit,
     onBezelToggle: (Boolean) -> Unit,
     onAddArgument: (String) -> Unit,
@@ -69,8 +70,21 @@ fun GameOptionsScreen(
         Text("Cover Art", style = MaterialTheme.typography.titleMedium)
         Spacer(modifier = Modifier.height(4.dp))
         Text((options.coverArt ?: CoverArtType.BOX).name, style = MaterialTheme.typography.bodyMedium)
+        // #47 - while the Settings "Global Cover Art" override is on, every
+        // game shows that single chosen type regardless of what's saved
+        // here, so changing it here would have no visible effect. Greyed
+        // out rather than hidden - the per-game choice underneath is still
+        // there, just not applied, and picking it back up when Global is
+        // turned off shouldn't require re-entering it.
+        if (globalCoverArtEnabled) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                "Controlled by Settings > Global Cover Art",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
         Spacer(modifier = Modifier.height(8.dp))
-        Button(onClick = { showCoverArtPicker = true }) { Text("Change") }
+        Button(onClick = { showCoverArtPicker = true }, enabled = !globalCoverArtEnabled) { Text("Change") }
 
         Spacer(modifier = Modifier.height(24.dp))
 
@@ -123,28 +137,42 @@ fun GameOptionsScreen(
     }
 
     if (showCoverArtPicker) {
-        AlertDialog(
-            onDismissRequest = { showCoverArtPicker = false },
-            title = { Text("Cover Art") },
-            text = {
-                Column {
-                    CoverArtType.entries.forEach { type ->
-                        Text(
-                            type.name,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    onCoverArtChange(type)
-                                    showCoverArtPicker = false
-                                }
-                                .padding(12.dp),
-                        )
-                    }
-                }
+        CoverArtPickerDialog(
+            onSelect = { type ->
+                onCoverArtChange(type)
+                showCoverArtPicker = false
             },
-            confirmButton = {
-                TextButton(onClick = { showCoverArtPicker = false }) { Text("Cancel") }
-            },
+            onDismiss = { showCoverArtPicker = false },
         )
     }
+}
+
+/**
+ * The 4-choice (CD/Logo/Box/Text) Cover Art picker, shared between #31's
+ * per-game Options screen (above) and #47's Settings "Global Cover Art" row
+ * - same list, same behavior, just a different caller for what "selecting a
+ * type" means.
+ */
+@Composable
+fun CoverArtPickerDialog(onSelect: (CoverArtType) -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Cover Art") },
+        text = {
+            Column {
+                CoverArtType.entries.forEach { type ->
+                    Text(
+                        type.name,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(type) }
+                            .padding(12.dp),
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }
