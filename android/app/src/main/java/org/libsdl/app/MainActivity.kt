@@ -415,21 +415,16 @@ private fun HomeScreen(
     // Per the owner's #36 redesign: the dashboard never shows the raw
     // folder path - just the game carousel, plus a "+" (add/change game
     // folder) and gear (Settings, #30) icon pair in the upper right.
+    //
+    // The icon Row is declared LAST, not first - #44's full-screen
+    // HorizontalPager (inside GameCarousel) claims pointer input across its
+    // entire fillMaxSize() bounds, including the corner where these icons
+    // sit, even though no card is visually there. A composable declared
+    // earlier in a Box is drawn/hit-tested underneath one declared later,
+    // so putting the Row first left it visually correct but untouchable -
+    // a real regression caught live on-device once the carousel landed.
+    // Declaring it last restores the icons' touch priority.
     Box(modifier = Modifier.fillMaxSize()) {
-        Row(
-            horizontalArrangement = Arrangement.End,
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.TopEnd),
-        ) {
-            IconButton(onClick = onChooseFolder) {
-                Icon(Icons.Filled.Add, contentDescription = "Choose game folder")
-            }
-            IconButton(onClick = onOpenSettings) {
-                Icon(Icons.Filled.Settings, contentDescription = "Settings")
-            }
-        }
-
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             if (pathResolutionFailed) {
                 Text(
@@ -450,6 +445,20 @@ private fun HomeScreen(
                     onPlay = onPlay,
                     onOpenOptions = onOpenOptions,
                 )
+            }
+        }
+
+        Row(
+            horizontalArrangement = Arrangement.End,
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.TopEnd),
+        ) {
+            IconButton(onClick = onChooseFolder) {
+                Icon(Icons.Filled.Add, contentDescription = "Choose game folder")
+            }
+            IconButton(onClick = onOpenSettings) {
+                Icon(Icons.Filled.Settings, contentDescription = "Settings")
             }
         }
     }
