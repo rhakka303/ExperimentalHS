@@ -12,6 +12,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -62,6 +63,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -447,6 +449,20 @@ private fun HomeScreen(
                 )
             }
         }
+
+        // Brand wordmark, upper-left - balances the +/gear icons on the
+        // right. Declared after the carousel `Box`, same reasoning as the
+        // icon Row below: a static image doesn't need touch priority itself,
+        // but keeping every top-bar element declared after the full-screen
+        // carousel is the established, working pattern in this file.
+        Image(
+            painter = painterResource(id = R.drawable.hypdroid_logo),
+            contentDescription = "Hypdroid",
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(8.dp)
+                .height(40.dp),
+        )
 
         Row(
             horizontalArrangement = Arrangement.End,

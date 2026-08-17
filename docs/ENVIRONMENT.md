@@ -348,3 +348,7 @@ The regression noted (but deliberately deferred) during #31's work - fixed as it
 **Fix:** reordered `HomeScreen` so the icon `Row` is declared last, after the carousel `Box` - later declaration order gives it input priority in the overlapping region, with no visual change (the icons render in the same place either way, `Alignment.TopEnd` is unaffected by declaration order).
 
 **Result, verified on the physical Retroid Pocket 5:** both the "+" icon (opens the SAF game-folder picker) and the gear icon (opens Settings) respond to touch correctly again.
+
+## Dashboard wordmark logo
+
+Added the `HYPDROID` wordmark (`asset/Hypdroid_Logo_YXBA.png`, already in the repo from the earlier icon/name work) to the dashboard's upper-left corner, balancing the "+"/gear icons on the right. Copied into `android/app/src/main/res/drawable/hypdroid_logo.png` (Android resource names must be lowercase/alphanumeric - the source filename doesn't qualify as-is) and rendered via a plain `Image`/`painterResource`, sized to `40.dp` height with its aspect ratio preserved. Declared after the carousel `Box` in `HomeScreen`, matching the same declaration-order convention the icon `Row` fix just established - not required for a non-interactive image, but keeps the pattern consistent. Verified on the physical Retroid Pocket 5.
