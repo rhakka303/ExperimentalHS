@@ -103,4 +103,9 @@ dependencies {
     implementation 'androidx.compose.material3:material3'
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.8.1'
     debugImplementation 'androidx.compose.ui:ui-tooling'
+
+    // Phase E: carousel dashboard box art (#44) - loads real PNGs from
+    // arbitrary file paths under the user's picked media folder, which
+    // nothing before this needed.
+    implementation 'io.coil-kt:coil-compose:2.6.0'
 }

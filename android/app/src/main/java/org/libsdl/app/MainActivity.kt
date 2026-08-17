@@ -11,17 +11,27 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PageSize
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -37,12 +47,28 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.util.lerp
+import coil.compose.AsyncImage
 import java.io.File
+import kotlin.math.absoluteValue
+import kotlinx.coroutines.launch
 
 /**
  * The real app entry point (see AndroidManifest.xml - this replaced
@@ -267,6 +293,7 @@ private fun HypdroidApp(context: MainActivity) {
     when (currentScreen) {
         Screen.HOME -> HomeScreen(
             gameFolderPath = gameFolderPath,
+            mediaFolderPath = mediaFolderPath,
             pathResolutionFailed = pathResolutionFailed,
             games = games,
             onChooseFolder = onChooseGameFolder,
@@ -311,6 +338,7 @@ private fun HypdroidApp(context: MainActivity) {
 @Composable
 private fun HomeScreen(
     gameFolderPath: String?,
+    mediaFolderPath: String?,
     pathResolutionFailed: Boolean,
     games: List<Game>,
     onChooseFolder: () -> Unit,
@@ -318,10 +346,8 @@ private fun HomeScreen(
     onPlay: (Game) -> Unit,
 ) {
     // Per the owner's #36 redesign: the dashboard never shows the raw
-    // folder path - just the game list, plus a "+" (add/change game
-    // folder) and gear (Settings, #30) icon pair in the upper right. The
-    // full visual gallery (game tiles, box art) is Phase E; this is still
-    // just a plain list - the scanning mechanics are Phase D's job (#28).
+    // folder path - just the game carousel, plus a "+" (add/change game
+    // folder) and gear (Settings, #30) icon pair in the upper right.
     Box(modifier = Modifier.fillMaxSize()) {
         Row(
             horizontalArrangement = Arrangement.End,
@@ -338,35 +364,142 @@ private fun HomeScreen(
         }
 
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                if (pathResolutionFailed) {
-                    Text(
-                        "Couldn't resolve a real filesystem path for that folder " +
-                            "on this device. Try a different folder.",
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(24.dp),
-                    )
-                } else if (gameFolderPath == null) {
-                    Text("No games yet. Tap + to choose a game folder.")
-                } else if (games.isEmpty()) {
-                    Text("No games found in this folder.")
-                } else {
-                    Text("${games.size} game(s) found - tap to play:")
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        games.forEach { game ->
-                            Text(
-                                "${game.name}  (${game.category})",
-                                modifier = Modifier
-                                    .clickable { onPlay(game) }
-                                    .padding(12.dp),
-                            )
-                        }
-                    }
-                }
+            if (pathResolutionFailed) {
+                Text(
+                    "Couldn't resolve a real filesystem path for that folder " +
+                        "on this device. Try a different folder.",
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(24.dp),
+                )
+            } else if (gameFolderPath == null) {
+                Text("No games yet. Tap + to choose a game folder.")
+            } else if (games.isEmpty()) {
+                Text("No games found in this folder.")
+            } else {
+                GameCarousel(games = games, mediaFolderPath = mediaFolderPath, onPlay = onPlay)
             }
         }
     }
+}
+
+/**
+ * #44 - Eden-style carousel: one game centered/highlighted, neighbors
+ * peeking in at reduced scale, swipe to page between them, tap the
+ * centered card to launch. First pass shows box art only (the owner's
+ * available content right now) - per-game choice of which media type to
+ * show (#31's future "Cover Art" field: CD/Logo/Box/Text) isn't built yet,
+ * so every card just tries box art and falls back to a plain text card.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun GameCarousel(
+    games: List<Game>,
+    mediaFolderPath: String?,
+    onPlay: (Game) -> Unit,
+) {
+    val pagerState = rememberPagerState(pageCount = { games.size })
+    val coroutineScope = rememberCoroutineScope()
+    // HorizontalPager doesn't respond to d-pad left/right on its own the
+    // way LazyColumn responds to up/down "for free" (Compose's built-in
+    // focus-traversal handles simple linear lists, but not page-changing
+    // gestures like this) - this is gamepad-first hardware, so real d-pad
+    // paging needs to be wired up explicitly, not left as a touch-only gap.
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+
+    HorizontalPager(
+        state = pagerState,
+        // A fixed, modest page width (rather than the default full-width
+        // page) is what actually produces the Eden-style look on this wide
+        // landscape screen - a full-width page left the narrow portrait
+        // card pinned to the page's start edge with a huge empty gap
+        // before the next page, instead of a tight, centered carousel.
+        pageSize = PageSize.Fixed(420.dp),
+        contentPadding = PaddingValues(horizontal = (LocalConfiguration.current.screenWidthDp.dp - 420.dp) / 2),
+        pageSpacing = 16.dp,
+        modifier = Modifier
+            .fillMaxSize()
+            .focusRequester(focusRequester)
+            .focusable()
+            .onKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+                val targetPage = when (event.key) {
+                    Key.DirectionLeft -> pagerState.currentPage - 1
+                    Key.DirectionRight -> pagerState.currentPage + 1
+                    else -> return@onKeyEvent false
+                }
+                if (targetPage in games.indices) {
+                    coroutineScope.launch { pagerState.animateScrollToPage(targetPage) }
+                }
+                true
+            },
+    ) { page ->
+        val game = games[page]
+        val pageOffset = ((pagerState.currentPage - page) + pagerState.currentPageOffsetFraction).absoluteValue
+        val scale = lerp(0.82f, 1f, 1f - pageOffset.coerceIn(0f, 1f))
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            GameCard(
+                game = game,
+                boxArtFile = boxArtFile(mediaFolderPath, game.name),
+                scale = scale,
+                onClick = { onPlay(game) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun GameCard(
+    game: Game,
+    boxArtFile: File?,
+    scale: Float,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxHeight(0.8f)
+            .aspectRatio(0.7f)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (boxArtFile != null) {
+            AsyncImage(
+                model = boxArtFile,
+                contentDescription = game.name,
+                // Fit, not Crop - the real box art PNGs include a
+                // transparent shadow margin around the rendered box, and
+                // Crop was cutting into the top/bottom of that to fill the
+                // card's fixed aspect ratio (confirmed by comparing the
+                // in-app render against the source file directly).
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            // No box art for this game (or no media folder set) - falls
+            // back to a plain text card rather than an error/blank
+            // space, matching the app's existing missing-content pattern.
+            Text(
+                game.name,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(16.dp),
+            )
+        }
+    }
+}
+
+// <media>/box/<gamename>.png, matching the subfolder convention decided
+// during #30's planning - null if no media folder is set or the specific
+// file doesn't exist, so callers can fall back gracefully per-game.
+private fun boxArtFile(mediaFolderPath: String?, gameName: String): File? {
+    if (mediaFolderPath == null) return null
+    val file = File(mediaFolderPath, "box/$gameName.png")
+    return if (file.exists()) file else null
 }
 
 /**
