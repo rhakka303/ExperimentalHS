@@ -174,11 +174,7 @@ failures - same verification method used in #35).
 
 ## Not currently patched: `src/game/singe/singeproxy.cpp`
 
-#29 added temporary diagnostic `lua_gc(..., LUA_GCSTOP/GCRESTART, ...)` calls
-to `sep_startup()` while investigating the FORTIFY crash above. #35 fully
-root-caused the real issue and removed both diagnostic lines - between #35
-and the asset-path patch below, the file went through a period of being
-fully unpatched (matching upstream exactly) before picking up the new patch.
+Issue #29 added temporary diagnostic `lua_gc(..., LUA_GCSTOP/GCRESTART, ...)` calls to `sep_startup()` while investigating the FORTIFY crash above. Issue #35 fully root-caused the real issue and removed both diagnostic lines - between that fix and the asset-path patch below, the file went through a period of being fully unpatched (matching upstream exactly) before picking up the new patch.
 
 ---
 
