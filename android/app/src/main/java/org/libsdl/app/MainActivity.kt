@@ -14,6 +14,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -159,7 +160,14 @@ private fun resolveRealPath(treeUri: Uri): String? {
     return if (file.exists() && file.isDirectory) path else null
 }
 
-private enum class Screen { HOME, SETTINGS, CONTROLLER_CONFIG }
+// A sealed class rather than a plain enum since #31's per-game options
+// screen needs to carry which game it's scoped to.
+private sealed class Screen {
+    object Home : Screen()
+    object Settings : Screen()
+    object ControllerConfig : Screen()
+    data class GameOptionsFor(val gameName: String) : Screen()
+}
 
 private const val PREFS_NAME = "hypdroid_prefs"
 private const val PREF_GAME_FOLDER_URI = "game_folder_uri"
@@ -197,11 +205,25 @@ private fun loadPersistedFolderUri(context: Context, key: String): Uri? {
 
 @Composable
 private fun HypdroidApp(context: MainActivity) {
-    var currentScreen by remember { mutableStateOf(Screen.HOME) }
+    var currentScreen by remember { mutableStateOf<Screen>(Screen.Home) }
     var gameFolderPath by remember { mutableStateOf<String?>(null) }
     var pathResolutionFailed by remember { mutableStateOf(false) }
     var games by remember { mutableStateOf<List<Game>>(emptyList()) }
     var mediaFolderPath by remember { mutableStateOf<String?>(null) }
+    // #31 - per-game Cover Art/Bezel/Arguments, keyed by game name. Loaded
+    // from SharedPreferences whenever the game list changes (including the
+    // very first scan), kept in Compose state after that so edits made in
+    // GameOptionsScreen show up immediately (e.g. the carousel's cover art)
+    // without needing a rescan.
+    var gameOptionsMap by remember { mutableStateOf<Map<String, GameOptions>>(emptyMap()) }
+
+    LaunchedEffect(games) {
+        gameOptionsMap = games.associate { it.name to loadGameOptions(context, it.name) }
+    }
+
+    fun updateGameOptions(gameName: String, updated: GameOptions) {
+        gameOptionsMap = gameOptionsMap + (gameName to updated)
+    }
 
     fun applyGameFolder(uri: Uri) {
         val realPath = resolveRealPath(uri)
@@ -290,32 +312,42 @@ private fun HypdroidApp(context: MainActivity) {
         applyMediaFolder(uri)
     }
 
-    when (currentScreen) {
-        Screen.HOME -> HomeScreen(
+    when (val screen = currentScreen) {
+        Screen.Home -> HomeScreen(
             gameFolderPath = gameFolderPath,
             mediaFolderPath = mediaFolderPath,
             pathResolutionFailed = pathResolutionFailed,
             games = games,
+            gameOptionsMap = gameOptionsMap,
             onChooseFolder = onChooseGameFolder,
-            onOpenSettings = { currentScreen = Screen.SETTINGS },
+            onOpenSettings = { currentScreen = Screen.Settings },
+            onOpenOptions = { game -> currentScreen = Screen.GameOptionsFor(game.name) },
             onPlay = { game ->
                 val homeDir = gameFolderPath
                 if (homeDir != null) {
+                    val args = buildLaunchArgs(game, homeDir).toMutableList()
+                    val options = gameOptionsMap[game.name]
+                    if (options?.bezelEnabled == true) {
+                        args += bezelLaunchArgs(mediaFolderPath, game.name)
+                    }
+                    options?.arguments?.forEach { entry ->
+                        args += entry.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+                    }
                     val intent = Intent(context, HypseusActivity::class.java)
-                        .putExtra(HypseusActivity.EXTRA_ARGS, buildLaunchArgs(game, homeDir))
+                        .putExtra(HypseusActivity.EXTRA_ARGS, args.toTypedArray())
                     context.startActivity(intent)
                 }
             },
         )
-        Screen.SETTINGS -> SettingsScreen(
+        Screen.Settings -> SettingsScreen(
             gameFolderPath = gameFolderPath,
             mediaFolderPath = mediaFolderPath,
             onChangeGameFolder = onChooseGameFolder,
             onChangeMediaFolder = { pickMediaFolder.launch(null) },
-            onOpenControllerConfig = { currentScreen = Screen.CONTROLLER_CONFIG },
-            onBack = { currentScreen = Screen.HOME },
+            onOpenControllerConfig = { currentScreen = Screen.ControllerConfig },
+            onBack = { currentScreen = Screen.Home },
         )
-        Screen.CONTROLLER_CONFIG -> {
+        Screen.ControllerConfig -> {
             val homeDir = gameFolderPath
             if (homeDir == null) {
                 // Shouldn't normally be reachable (the row that opens this
@@ -323,12 +355,45 @@ private fun HypdroidApp(context: MainActivity) {
                 // back to Settings rather than crash if it somehow is - as
                 // a state change, this has to happen in an effect, not
                 // directly in the composable body.
-                LaunchedEffect(Unit) { currentScreen = Screen.SETTINGS }
+                LaunchedEffect(Unit) { currentScreen = Screen.Settings }
             } else {
                 ControllerConfigScreen(
                     activity = context,
                     gameFolderPath = homeDir,
-                    onBack = { currentScreen = Screen.SETTINGS },
+                    onBack = { currentScreen = Screen.Settings },
+                )
+            }
+        }
+        is Screen.GameOptionsFor -> {
+            val game = games.find { it.name == screen.gameName }
+            if (game == null) {
+                // Game list changed out from under this screen (folder
+                // re-picked, etc.) - fall back rather than crash.
+                LaunchedEffect(Unit) { currentScreen = Screen.Home }
+            } else {
+                val options = gameOptionsMap[game.name] ?: GameOptions(null, false, emptyList())
+                GameOptionsScreen(
+                    game = game,
+                    options = options,
+                    onCoverArtChange = { type ->
+                        saveCoverArt(context, game.name, type)
+                        updateGameOptions(game.name, options.copy(coverArt = type))
+                    },
+                    onBezelToggle = { enabled ->
+                        saveBezelEnabled(context, game.name, enabled)
+                        updateGameOptions(game.name, options.copy(bezelEnabled = enabled))
+                    },
+                    onAddArgument = { arg ->
+                        val updated = options.arguments + arg
+                        saveArguments(context, game.name, updated)
+                        updateGameOptions(game.name, options.copy(arguments = updated))
+                    },
+                    onRemoveArgument = { arg ->
+                        val updated = options.arguments - arg
+                        saveArguments(context, game.name, updated)
+                        updateGameOptions(game.name, options.copy(arguments = updated))
+                    },
+                    onBack = { currentScreen = Screen.Home },
                 )
             }
         }
@@ -341,8 +406,10 @@ private fun HomeScreen(
     mediaFolderPath: String?,
     pathResolutionFailed: Boolean,
     games: List<Game>,
+    gameOptionsMap: Map<String, GameOptions>,
     onChooseFolder: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenOptions: (Game) -> Unit,
     onPlay: (Game) -> Unit,
 ) {
     // Per the owner's #36 redesign: the dashboard never shows the raw
@@ -376,7 +443,13 @@ private fun HomeScreen(
             } else if (games.isEmpty()) {
                 Text("No games found in this folder.")
             } else {
-                GameCarousel(games = games, mediaFolderPath = mediaFolderPath, onPlay = onPlay)
+                GameCarousel(
+                    games = games,
+                    mediaFolderPath = mediaFolderPath,
+                    gameOptionsMap = gameOptionsMap,
+                    onPlay = onPlay,
+                    onOpenOptions = onOpenOptions,
+                )
             }
         }
     }
@@ -395,7 +468,9 @@ private fun HomeScreen(
 private fun GameCarousel(
     games: List<Game>,
     mediaFolderPath: String?,
+    gameOptionsMap: Map<String, GameOptions>,
     onPlay: (Game) -> Unit,
+    onOpenOptions: (Game) -> Unit,
 ) {
     val pagerState = rememberPagerState(pageCount = { games.size })
     val coroutineScope = rememberCoroutineScope()
@@ -423,6 +498,13 @@ private fun GameCarousel(
             .focusable()
             .onKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+                // #31 - pressing down opens the focused game's options
+                // screen, the gamepad equivalent of a touch long-press
+                // (see GameCard's combinedClickable below).
+                if (event.key == Key.DirectionDown) {
+                    onOpenOptions(games[pagerState.currentPage])
+                    return@onKeyEvent true
+                }
                 val targetPage = when (event.key) {
                     Key.DirectionLeft -> pagerState.currentPage - 1
                     Key.DirectionRight -> pagerState.currentPage + 1
@@ -437,23 +519,27 @@ private fun GameCarousel(
         val game = games[page]
         val pageOffset = ((pagerState.currentPage - page) + pagerState.currentPageOffsetFraction).absoluteValue
         val scale = lerp(0.82f, 1f, 1f - pageOffset.coerceIn(0f, 1f))
+        val coverArtOverride = gameOptionsMap[game.name]?.coverArt
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             GameCard(
                 game = game,
-                boxArtFile = boxArtFile(mediaFolderPath, game.name),
+                coverArtFile = resolveCoverArtFile(mediaFolderPath, game.name, coverArtOverride),
                 scale = scale,
                 onClick = { onPlay(game) },
+                onLongClick = { onOpenOptions(game) },
             )
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun GameCard(
     game: Game,
-    boxArtFile: File?,
+    coverArtFile: File?,
     scale: Float,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
 ) {
     Box(
         modifier = Modifier
@@ -465,12 +551,15 @@ private fun GameCard(
             }
             .clip(RoundedCornerShape(16.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .clickable(onClick = onClick),
+            // #31 - long-press is touch's equivalent of pressing down on
+            // the d-pad (see GameCarousel's onKeyEvent above) - opens this
+            // game's options screen (Cover Art/Bezel/Arguments).
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
         contentAlignment = Alignment.Center,
     ) {
-        if (boxArtFile != null) {
+        if (coverArtFile != null) {
             AsyncImage(
-                model = boxArtFile,
+                model = coverArtFile,
                 contentDescription = game.name,
                 // Fit, not Crop - the real box art PNGs include a
                 // transparent shadow margin around the rendered box, and
@@ -481,9 +570,10 @@ private fun GameCard(
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
-            // No box art for this game (or no media folder set) - falls
-            // back to a plain text card rather than an error/blank
-            // space, matching the app's existing missing-content pattern.
+            // No art for this game's resolved Cover Art type (or "Text"
+            // was explicitly chosen, or no media folder set) - falls back
+            // to a plain text card rather than an error/blank space,
+            // matching the app's existing missing-content pattern.
             Text(
                 game.name,
                 textAlign = TextAlign.Center,
@@ -491,15 +581,6 @@ private fun GameCard(
             )
         }
     }
-}
-
-// <media>/box/<gamename>.png, matching the subfolder convention decided
-// during #30's planning - null if no media folder is set or the specific
-// file doesn't exist, so callers can fall back gracefully per-game.
-private fun boxArtFile(mediaFolderPath: String?, gameName: String): File? {
-    if (mediaFolderPath == null) return null
-    val file = File(mediaFolderPath, "box/$gameName.png")
-    return if (file.exists()) file else null
 }
 
 /**
