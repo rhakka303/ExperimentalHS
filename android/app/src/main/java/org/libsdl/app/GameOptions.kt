@@ -139,3 +139,52 @@ fun saveGlobalCoverArtType(context: Context, type: CoverArtType) {
         .putString(PREF_GLOBAL_COVER_ART_TYPE, type.name)
         .apply()
 }
+
+// #66 - Background Art. Two independent toggles, not an automatic fallback
+// chain: "Background Art" is the master on/off switch (off = today's plain
+// look, unconditionally); "Default Art" only matters while Background Art
+// is on, and forces bg/default.png for every game, overriding any per-game
+// bg/<gamename>.png - same override shape as Global Cover Art above.
+private const val PREF_BACKGROUND_ART_ENABLED = "background_art_enabled"
+private const val PREF_DEFAULT_ART_ENABLED = "default_art_enabled"
+
+fun loadBackgroundArtEnabled(context: Context): Boolean {
+    return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .getBoolean(PREF_BACKGROUND_ART_ENABLED, false)
+}
+
+fun saveBackgroundArtEnabled(context: Context, enabled: Boolean) {
+    context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .edit()
+        .putBoolean(PREF_BACKGROUND_ART_ENABLED, enabled)
+        .apply()
+}
+
+fun loadDefaultArtEnabled(context: Context): Boolean {
+    return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .getBoolean(PREF_DEFAULT_ART_ENABLED, false)
+}
+
+fun saveDefaultArtEnabled(context: Context, enabled: Boolean) {
+    context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .edit()
+        .putBoolean(PREF_DEFAULT_ART_ENABLED, enabled)
+        .apply()
+}
+
+// <media>/bg/<gamename>.png or <media>/bg/default.png, gated entirely by
+// the two toggles above - no automatic fallback when a per-game image is
+// simply missing (that's a deliberate design choice, not an oversight):
+// with Default Art off, a game with no bg art of its own just stays plain
+// white, same as Background Art being off entirely.
+fun backgroundArtFile(
+    mediaFolderPath: String?,
+    gameName: String,
+    backgroundArtEnabled: Boolean,
+    defaultArtEnabled: Boolean,
+): File? {
+    if (mediaFolderPath == null || !backgroundArtEnabled) return null
+    val fileName = if (defaultArtEnabled) "default" else gameName
+    val file = File(mediaFolderPath, "bg/$fileName.png")
+    return if (file.exists()) file else null
+}
