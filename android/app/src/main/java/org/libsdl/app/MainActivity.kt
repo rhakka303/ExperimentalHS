@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -571,11 +572,16 @@ private fun HomeScreen(
                     modifier = Modifier.height(40.dp),
                 )
                 Spacer(modifier = Modifier.weight(1f))
+                // White against the scrim always contrasts, since the scrim
+                // itself is always dark - that's the "universal color" the
+                // scrim exists to make possible. Left at the default theme
+                // color the rest of the time, matching the plain background.
+                val iconTint = if (backgroundFile != null) Color.White else LocalContentColor.current
                 IconButton(onClick = onChooseFolder) {
-                    Icon(Icons.Filled.Add, contentDescription = "Choose game folder")
+                    Icon(Icons.Filled.Add, contentDescription = "Choose game folder", tint = iconTint)
                 }
                 IconButton(onClick = onOpenSettings) {
-                    Icon(Icons.Filled.Settings, contentDescription = "Settings")
+                    Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = iconTint)
                 }
             }
 
