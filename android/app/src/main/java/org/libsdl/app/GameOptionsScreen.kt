@@ -2,6 +2,7 @@ package org.libsdl.app
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,6 +21,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -67,69 +69,89 @@ fun GameOptionsScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        Text("Cover Art", style = MaterialTheme.typography.titleMedium)
-        Spacer(modifier = Modifier.height(4.dp))
-        Text((options.coverArt ?: CoverArtType.BOX).name, style = MaterialTheme.typography.bodyMedium)
-        // #47 - while the Settings "Global Cover Art" override is on, every
-        // game shows that single chosen type regardless of what's saved
-        // here, so changing it here would have no visible effect. Greyed
-        // out rather than hidden - the per-game choice underneath is still
-        // there, just not applied, and picking it back up when Global is
-        // turned off shouldn't require re-entering it.
-        if (globalCoverArtEnabled) {
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                "Controlled by Settings > Global Cover Art",
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-        Button(onClick = { showCoverArtPicker = true }, enabled = !globalCoverArtEnabled) { Text("Change") }
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Bezel", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    if (options.bezelEnabled) "On" else "Off",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-            Switch(checked = options.bezelEnabled, onCheckedChange = onBezelToggle)
-        }
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Text("Arguments", style = MaterialTheme.typography.titleMedium)
-        Spacer(modifier = Modifier.height(8.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                value = argumentText,
-                onValueChange = { argumentText = it },
-                modifier = Modifier.weight(1f),
-                singleLine = true,
-                placeholder = { Text("-fastboot") },
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Button(onClick = {
-                val trimmed = argumentText.trim()
-                if (trimmed.isNotEmpty()) {
-                    onAddArgument(trimmed)
-                    argumentText = ""
+        // #58 - Cover Art and Bezel sit side by side, each in its own
+        // thin-bordered card, instead of two full-width stacked rows - frees
+        // up vertical room for the Arguments card below.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            OutlinedCard(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text("Cover Art", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        (options.coverArt ?: CoverArtType.BOX).name,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    // #47 - while the Settings "Global Cover Art" override is
+                    // on, every game shows that single chosen type
+                    // regardless of what's saved here, so changing it here
+                    // would have no visible effect. Greyed out rather than
+                    // hidden - the per-game choice underneath is still
+                    // there, just not applied, and picking it back up when
+                    // Global is turned off shouldn't require re-entering it.
+                    if (globalCoverArtEnabled) {
+                        Text(
+                            "Controlled by Settings > Global Cover Art",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = { showCoverArtPicker = true },
+                        enabled = !globalCoverArtEnabled,
+                    ) { Text("Change") }
                 }
-            }) { Text("Add") }
+            }
+
+            OutlinedCard(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text("Bezel", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        if (options.bezelEnabled) "On" else "Off",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Switch(checked = options.bezelEnabled, onCheckedChange = onBezelToggle)
+                }
+            }
         }
-        Spacer(modifier = Modifier.height(8.dp))
-        LazyColumn(modifier = Modifier.weight(1f)) {
-            items(options.arguments, key = { it }) { arg ->
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                ) {
-                    Text(arg, modifier = Modifier.weight(1f))
-                    IconButton(onClick = { onRemoveArgument(arg) }) {
-                        Icon(Icons.Filled.Close, contentDescription = "Remove")
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        OutlinedCard(modifier = Modifier.fillMaxWidth().weight(1f)) {
+            Column(modifier = Modifier.padding(12.dp).fillMaxSize()) {
+                Text("Arguments", style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = argumentText,
+                        onValueChange = { argumentText = it },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        placeholder = { Text("-fastboot") },
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(onClick = {
+                        val trimmed = argumentText.trim()
+                        if (trimmed.isNotEmpty()) {
+                            onAddArgument(trimmed)
+                            argumentText = ""
+                        }
+                    }) { Text("Add") }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                LazyColumn(modifier = Modifier.weight(1f)) {
+                    items(options.arguments, key = { it }) { arg ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        ) {
+                            Text(arg, modifier = Modifier.weight(1f))
+                            IconButton(onClick = { onRemoveArgument(arg) }) {
+                                Icon(Icons.Filled.Close, contentDescription = "Remove")
+                            }
+                        }
                     }
                 }
             }
