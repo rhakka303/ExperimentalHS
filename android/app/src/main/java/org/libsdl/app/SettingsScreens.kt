@@ -96,12 +96,16 @@ private fun SettingsCard(title: String, description: String, onClick: () -> Unit
 
 /**
  * Shared by both the Game folder and Media folder cards - identical shape,
- * just a different label/path/change action.
+ * just a different label/path/change action. `instructions`, when non-null
+ * (only the Game folder screen passes it - #60), shows the required
+ * singe/roms/vldp layout on-screen, since that structure is a real
+ * hypseus/Singe requirement, not obvious from the folder picker alone.
  */
 @Composable
 fun FolderManageScreen(
     title: String,
     path: String?,
+    instructions: String? = null,
     onChange: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -124,6 +128,13 @@ fun FolderManageScreen(
                 Text(path ?: "Not set", style = MaterialTheme.typography.bodyMedium)
             }
             Button(onClick = onChange) { Text("Change") }
+        }
+
+        if (instructions != null) {
+            Spacer(modifier = Modifier.height(32.dp))
+            Text("Recommended Folder Structure", style = MaterialTheme.typography.titleMedium)
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(instructions, style = MaterialTheme.typography.bodyMedium)
         }
     }
 }

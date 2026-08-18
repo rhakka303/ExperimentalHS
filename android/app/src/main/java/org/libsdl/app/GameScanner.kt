@@ -11,10 +11,6 @@ data class Game(
     val romOrScriptPath: String,
 )
 
-// roms/ and vldp/ are reserved for Daphne-native games (see below) - a
-// fan-made game folder can't use either name at the top level of the home dir.
-private val RESERVED_SUBFOLDERS = setOf("roms", "vldp")
-
 /**
  * Scans a chosen home folder for both game categories hypseus supports.
  * Any folder/file that doesn't match a category's required layout is just
@@ -23,9 +19,16 @@ private val RESERVED_SUBFOLDERS = setOf("roms", "vldp")
 fun scanGames(homeDir: File): List<Game> {
     val games = mutableListOf<Game>()
 
-    // Fan-made (Singe) games: each one is its own folder directly under the
-    // home dir, e.g. <home>/AlteredCarbonResleeved/AlteredCarbonResleeved.txt
-    homeDir.listFiles { f -> f.isDirectory && f.name !in RESERVED_SUBFOLDERS }?.forEach { gameDir ->
+    // Fan-made (Singe) games live under singe/<name>/<name>.txt - a real
+    // hypseus/Singe requirement, not a Hypdroid convention (#60): every
+    // Singe game's own script hardcodes BASEDIR = "singe" and builds both
+    // its own directory (MYDIR = BASEDIR .. "/" .. name) and its shared
+    // Framework/FrameworkKimmy library path from that identical prefix, so
+    // the game folders and any shared library folders must all be true
+    // siblings inside one real "singe" folder - confirmed directly against
+    // a real game script, not assumed.
+    val singeDir = File(homeDir, "singe")
+    singeDir.listFiles { f -> f.isDirectory }?.forEach { gameDir ->
         val name = gameDir.name
         val framefile = File(gameDir, "$name.txt")
         if (!framefile.isFile) return@forEach
