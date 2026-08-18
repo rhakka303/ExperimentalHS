@@ -138,12 +138,11 @@ private data class ConflictState(
 )
 
 /**
- * #41 - live gamepad button mapping. Reads/displays the Singe-category ini
- * (the one with real manual customization already, per the owner's SD
- * card) as the canonical view; every save writes to both the Singe and
- * Daphne-native files (applyBindingToBothFiles(), see GamepadIni.kt) so
- * they don't independently drift the way they already had before this
- * screen existed.
+ * #41 - live gamepad button mapping. Reads/writes the one real
+ * hypinput_gamepad.ini inside the Game folder (gamepadIniPath(), see
+ * GamepadIni.kt) - #60 made -datadir always the Game folder itself for
+ * every category, so there's only ever one file now (#72 fixed this screen
+ * to actually agree with that after #60 landed).
  *
  * Capture works through Android's own KeyEvent/MotionEvent APIs, not
  * hypseus/SDL - this screen is plain Compose in MainActivity, which never
@@ -164,7 +163,7 @@ fun ControllerConfigScreen(
     var fileMissing by remember { mutableStateOf(false) }
 
     LaunchedEffect(gameFolderPath) {
-        val file = File(singeIniPath(gameFolderPath))
+        val file = File(gamepadIniPath(gameFolderPath))
         if (file.exists()) {
             rows = parseGamepadRows(file.readText())
             fileMissing = false
@@ -189,7 +188,7 @@ fun ControllerConfigScreen(
                 if (conflictingKey != null) {
                     conflict = ConflictState(keyName, slot, token, conflictingKey)
                 } else {
-                    applyBindingToBothFiles(gameFolderPath, keyName, slot, token)
+                    applyBinding(gameFolderPath, keyName, slot, token)
                     rows = withBinding(currentRows, keyName, slot, token)
                 }
                 listening = null
@@ -239,7 +238,7 @@ fun ControllerConfigScreen(
             },
             confirmButton = {
                 TextButton(onClick = {
-                    applyBindingToBothFiles(gameFolderPath, c.keyName, c.slot, c.token)
+                    applyBinding(gameFolderPath, c.keyName, c.slot, c.token)
                     rows = withBinding(rows ?: emptyList(), c.keyName, c.slot, c.token)
                     conflict = null
                 }) { Text("Assign anyway") }

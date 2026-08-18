@@ -38,19 +38,18 @@ private const val KEYBOARD_HEADER = "[KEYBOARD]"
 private const val KEYBOARD_END = "END"
 
 /**
- * hypseus's own -datadir differs by game category (#38 - the picked folder
- * itself for Daphne-native, its parent for Singe games), and
- * hypinput_gamepad.ini is generated/read relative to whatever -datadir was
- * active at the time - so there are genuinely two independent files on a
- * real device, one per category, confirmed by pulling both off a real
- * Retroid Pocket 5 and diffing them (they'd already drifted: a manual
- * KEY_SERVICE edit made it into the Singe one but not the Daphne one).
- * These two paths are computed the same way LaunchArgs.kt's trueHomeDir is.
+ * #38's original per-category split (Daphne-native used the picked folder
+ * itself as -datadir, Singe used its parent) was removed by #60 - -datadir
+ * is always the picked Game folder itself now, for every category - so
+ * hypinput_gamepad.ini only ever exists in one place. #72: this function
+ * used to be two (singeIniPath()/daphneIniPath()) and only the Daphne one
+ * was updated when #60 landed, leaving the Singe path - which
+ * ControllerConfigScreen actually reads/writes through - still pointed at
+ * the parent folder. Confirmed on real hardware: that wrote real button
+ * remaps into a stale file in a shared multi-emulator ROMs directory that
+ * hypseus never reads, so those remaps silently never took effect in game.
  */
-fun singeIniPath(gameFolderPath: String): String =
-    "${File(gameFolderPath).parent ?: gameFolderPath}/hypinput_gamepad.ini"
-
-fun daphneIniPath(gameFolderPath: String): String =
+fun gamepadIniPath(gameFolderPath: String): String =
     "$gameFolderPath/hypinput_gamepad.ini"
 
 /**
@@ -139,23 +138,20 @@ fun updateGamepadBinding(
 }
 
 /**
- * Applies the same binding change to both the Singe and Daphne-native ini
- * files, per the owner's call - a single physical layout across every game
- * regardless of category, rather than letting the two independently-tracked
- * files drift apart (which they already had, before this existed). Missing
- * files are skipped, not created - this only edits files hypseus itself has
- * already generated (see #41's "doesn't exist yet" gating).
+ * Applies a binding change to the one real hypinput_gamepad.ini (#72 -
+ * previously wrote to two paths, back when #38's per-category split still
+ * existed). Missing file is skipped, not created - this only edits a file
+ * hypseus itself has already generated (see #41's "doesn't exist yet"
+ * gating).
  */
-fun applyBindingToBothFiles(
+fun applyBinding(
     gameFolderPath: String,
     keyName: String,
     slot: BindingSlot,
     newToken: String,
 ) {
-    for (path in listOf(singeIniPath(gameFolderPath), daphneIniPath(gameFolderPath))) {
-        val file = File(path)
-        if (!file.exists()) continue
-        val updated = updateGamepadBinding(file.readText(), keyName, slot, newToken)
-        file.writeText(updated)
-    }
+    val file = File(gamepadIniPath(gameFolderPath))
+    if (!file.exists()) return
+    val updated = updateGamepadBinding(file.readText(), keyName, slot, newToken)
+    file.writeText(updated)
 }
