@@ -365,7 +365,7 @@ Added the `HYPDROID` wordmark (`asset/Hypdroid_Logo_YXBA.png`, already in the re
 
 The picked Game folder must directly contain `singe/`, `roms/`, and `vldp/` as immediate children:
 
-```
+```text
 <picked Game folder, recommended name "hypseus">/
   singe/
     <fan-made game folder>/      (zipped or unzipped)
@@ -377,6 +377,7 @@ The picked Game folder must directly contain `singe/`, `roms/`, and `vldp/` as i
 This isn't a Hypdroid convention - it's a real hypseus/Singe requirement. Every fan-made game's own script hardcodes `BASEDIR = "singe"` and builds *both* its own directory (`MYDIR = BASEDIR .. "/" .. gamename`) and any shared library path (e.g. `dofile(BASEDIR .. "/FrameworkKimmy/globals.singe")`) from that identical prefix - confirmed by reading a real game's own `.singe` script, not assumed. That means the game folder and any shared library folder(s) it depends on must be true siblings, both direct children of a folder literally named `singe`.
 
 **Two earlier, wrong versions of this requirement, corrected through discussion with the owner (5 years of hands-on hypseus-singe experience) before any of this was built:**
+
 1. Re-picking to the existing picked folder's *parent* directly - wrong, since on the owner's real device that parent is a shared multi-emulator ROMs root already holding 20+ unrelated console folders (3do, gamecube, n64, psx, etc.), which would collide with whatever else already uses `roms/`/`vldp/` there.
 2. Moving only the individual game folders into a new nested `singe/` subfolder while leaving the shared library folder(s) at the previous top level (or vice versa) - wrong, since it breaks the identical `BASEDIR` prefix both paths are built from.
 
@@ -387,6 +388,7 @@ The actual fix: point Game folder at a *new, dedicated* folder (not the shared m
 - The "Manage Game Folder" screen now shows this required structure as on-screen instructions (recommended folder name, then `roms`/`vldp`/`singe` and what goes in each), since it's real, non-obvious tribal knowledge that shouldn't only live in this doc.
 
 **Result, verified on the physical Retroid Pocket 5 against a real test folder covering all three game forms:**
+
 - Daphne-native: real gameplay video with the scoreboard overlay, plus real physical controller input (movement and a custom-configured button binding) confirmed working.
 - Zipped Singe: real gameplay video playing correctly.
 - Unzipped Singe-script depending on a shared Framework-style library folder: reached a real Framework-rendered screen (a rankings/leaderboard UI with custom fonts) that only renders if the shared library code loaded and ran correctly - definitive proof the sibling resolution works end-to-end, not just in theory.
