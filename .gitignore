@@ -24,6 +24,9 @@ cmake-build-*/
 # Pre-built native artifacts (reproducible via docs/ENVIRONMENT.md, not committed)
 prebuilt/
 
+# Local smoke-test APK builds for informal sharing - never published, never tracked
+/smoke/
+
 # OS
 .DS_Store
 Thumbs.db
