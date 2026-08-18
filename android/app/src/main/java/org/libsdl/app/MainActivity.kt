@@ -7,7 +7,6 @@ import android.os.Bundle
 import android.os.Environment
 import android.provider.DocumentsContract
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -33,19 +32,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PageSize
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -171,6 +166,11 @@ private fun resolveRealPath(treeUri: Uri): String? {
 private sealed class Screen {
     object Home : Screen()
     object Settings : Screen()
+    // #55 - Settings' own destination screens, one per card.
+    object ManageGameFolder : Screen()
+    object ManageMediaFolder : Screen()
+    object AppSettings : Screen()
+    object About : Screen()
     object ControllerConfig : Screen()
     data class GameOptionsFor(val gameName: String) : Screen()
 }
@@ -364,12 +364,28 @@ private fun HypdroidApp(context: MainActivity) {
             },
         )
         Screen.Settings -> SettingsScreen(
-            gameFolderPath = gameFolderPath,
-            mediaFolderPath = mediaFolderPath,
+            onOpenManageGameFolder = { currentScreen = Screen.ManageGameFolder },
+            onOpenManageMediaFolder = { currentScreen = Screen.ManageMediaFolder },
+            onOpenAppSettings = { currentScreen = Screen.AppSettings },
+            onOpenControllerConfig = { currentScreen = Screen.ControllerConfig },
+            onOpenAbout = { currentScreen = Screen.About },
+            onBack = { currentScreen = Screen.Home },
+        )
+        Screen.ManageGameFolder -> FolderManageScreen(
+            title = "Game folder",
+            path = gameFolderPath,
+            onChange = onChooseGameFolder,
+            onBack = { currentScreen = Screen.Settings },
+        )
+        Screen.ManageMediaFolder -> FolderManageScreen(
+            title = "Media folder",
+            path = mediaFolderPath,
+            onChange = { pickMediaFolder.launch(null) },
+            onBack = { currentScreen = Screen.Settings },
+        )
+        Screen.AppSettings -> AppSettingsScreen(
             globalCoverArtEnabled = globalCoverArtEnabled,
             globalCoverArtType = globalCoverArtType,
-            onChangeGameFolder = onChooseGameFolder,
-            onChangeMediaFolder = { pickMediaFolder.launch(null) },
             onGlobalCoverArtToggle = { enabled ->
                 saveGlobalCoverArtEnabled(context, enabled)
                 globalCoverArtEnabled = enabled
@@ -378,8 +394,11 @@ private fun HypdroidApp(context: MainActivity) {
                 saveGlobalCoverArtType(context, type)
                 globalCoverArtType = type
             },
-            onOpenControllerConfig = { currentScreen = Screen.ControllerConfig },
-            onBack = { currentScreen = Screen.Home },
+            onBack = { currentScreen = Screen.Settings },
+        )
+        Screen.About -> AboutScreen(
+            context = context,
+            onBack = { currentScreen = Screen.Settings },
         )
         Screen.ControllerConfig -> {
             val homeDir = gameFolderPath
@@ -672,137 +691,5 @@ private fun GameCard(
     }
 }
 
-/**
- * #30's Settings screen: Game folder and Media folder pickers (reusing the
- * exact same SAF pattern/persisted state as #36 for the game folder - not a
- * separate copy), plus a "Controller Configuration" row opening #41's live
- * gamepad-mapping screen. There's no navigation-library backstack in this
- * app (just a plain Screen enum toggle in HypdroidApp), so this screen has
- * to handle its own way back to the dashboard: a back arrow in a simple top
- * bar, and a BackHandler so Android's system back button returns to Home
- * instead of falling through to exit the whole app.
- */
-@Composable
-private fun SettingsScreen(
-    gameFolderPath: String?,
-    mediaFolderPath: String?,
-    globalCoverArtEnabled: Boolean,
-    globalCoverArtType: CoverArtType,
-    onChangeGameFolder: () -> Unit,
-    onChangeMediaFolder: () -> Unit,
-    onGlobalCoverArtToggle: (Boolean) -> Unit,
-    onGlobalCoverArtTypeChange: (CoverArtType) -> Unit,
-    onOpenControllerConfig: () -> Unit,
-    onBack: () -> Unit,
-) {
-    BackHandler(onBack = onBack)
-
-    var showGlobalCoverArtPicker by remember { mutableStateOf(false) }
-
-    // #47 added a row, pushing Controller Configuration off the bottom on
-    // shorter screens with no way to reach it - this Column had no scroll
-    // modifier at all before now, it just relied on everything fitting.
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-            }
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Settings", style = MaterialTheme.typography.titleLarge)
-        }
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        SettingsRow(
-            label = "Game folder",
-            subtitle = gameFolderPath ?: "Not set",
-            buttonLabel = "Change",
-            onClick = onChangeGameFolder,
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        SettingsRow(
-            label = "Media folder",
-            subtitle = mediaFolderPath ?: "Not set",
-            buttonLabel = "Change",
-            onClick = onChangeMediaFolder,
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        // #47 - global override for every game's Cover Art at once, instead
-        // of setting each one individually via #31's per-game screen. Off by
-        // default, matching #31's existing per-game behavior until this was
-        // added.
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Global Cover Art", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    "On: same art for every game. Off: each game picks its own.",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-            Switch(checked = globalCoverArtEnabled, onCheckedChange = onGlobalCoverArtToggle)
-        }
-        if (globalCoverArtEnabled) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    globalCoverArtType.name,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.weight(1f),
-                )
-                Button(onClick = { showGlobalCoverArtPicker = true }) { Text("Change") }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        SettingsRow(
-            label = "Controller Configuration",
-            subtitle = if (gameFolderPath == null) {
-                "Set a game folder first"
-            } else {
-                "Assign gamepad buttons per action"
-            },
-            buttonLabel = "Configure",
-            onClick = onOpenControllerConfig,
-            enabled = gameFolderPath != null,
-        )
-    }
-
-    if (showGlobalCoverArtPicker) {
-        CoverArtPickerDialog(
-            onSelect = { type ->
-                onGlobalCoverArtTypeChange(type)
-                showGlobalCoverArtPicker = false
-            },
-            onDismiss = { showGlobalCoverArtPicker = false },
-        )
-    }
-}
-
-@Composable
-private fun SettingsRow(
-    label: String,
-    subtitle: String,
-    buttonLabel: String,
-    onClick: () -> Unit,
-    enabled: Boolean = true,
-) {
-    Column {
-        Text(label, style = MaterialTheme.typography.titleMedium)
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(subtitle, style = MaterialTheme.typography.bodyMedium)
-        Spacer(modifier = Modifier.height(8.dp))
-        Button(onClick = onClick, enabled = enabled) {
-            Text(buttonLabel)
-        }
-    }
-}
+// #55 - SettingsScreen and its destination screens (FolderManageScreen,
+// AppSettingsScreen, AboutScreen) moved to SettingsScreens.kt.
