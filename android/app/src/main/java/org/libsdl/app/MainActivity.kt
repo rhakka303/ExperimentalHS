@@ -16,7 +16,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.focusable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -498,16 +497,36 @@ private fun HomeScreen(
     // folder path - just the game carousel, plus a "+" (add/change game
     // folder) and gear (Settings, #30) icon pair in the upper right.
     //
-    // The icon Row is declared LAST, not first - #44's full-screen
-    // HorizontalPager (inside GameCarousel) claims pointer input across its
-    // entire fillMaxSize() bounds, including the corner where these icons
-    // sit, even though no card is visually there. A composable declared
-    // earlier in a Box is drawn/hit-tested underneath one declared later,
-    // so putting the Row first left it visually correct but untouchable -
-    // a real regression caught live on-device once the carousel landed.
-    // Declaring it last restores the icons' touch priority.
-    Box(modifier = Modifier.fillMaxSize()) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    // #65 - the top bar (logo + icons) is a real layout region here, not an
+    // overlay floating on top of the carousel's own full-screen Box. The
+    // carousel is confined to the space below it, so the two never occupy
+    // overlapping screen bounds - #49's declaration-order workaround (the
+    // icon Row had to be declared *after* the carousel purely to win touch
+    // priority in the region where they used to visually overlap) is no
+    // longer needed at all.
+    Column(modifier = Modifier.fillMaxSize()) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().padding(8.dp),
+        ) {
+            Image(
+                painter = painterResource(id = R.drawable.hypdroid_logo),
+                contentDescription = "Hypdroid",
+                modifier = Modifier.height(40.dp),
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            IconButton(onClick = onChooseFolder) {
+                Icon(Icons.Filled.Add, contentDescription = "Choose game folder")
+            }
+            IconButton(onClick = onOpenSettings) {
+                Icon(Icons.Filled.Settings, contentDescription = "Settings")
+            }
+        }
+
+        Box(
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            contentAlignment = Alignment.Center,
+        ) {
             if (pathResolutionFailed) {
                 Text(
                     "Couldn't resolve a real filesystem path for that folder " +
@@ -531,34 +550,6 @@ private fun HomeScreen(
                     onPlay = onPlay,
                     onOpenOptions = onOpenOptions,
                 )
-            }
-        }
-
-        // Brand wordmark, upper-left - balances the +/gear icons on the
-        // right. Declared after the carousel `Box`, same reasoning as the
-        // icon Row below: a static image doesn't need touch priority itself,
-        // but keeping every top-bar element declared after the full-screen
-        // carousel is the established, working pattern in this file.
-        Image(
-            painter = painterResource(id = R.drawable.hypdroid_logo),
-            contentDescription = "Hypdroid",
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(8.dp)
-                .height(40.dp),
-        )
-
-        Row(
-            horizontalArrangement = Arrangement.End,
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.TopEnd),
-        ) {
-            IconButton(onClick = onChooseFolder) {
-                Icon(Icons.Filled.Add, contentDescription = "Choose game folder")
-            }
-            IconButton(onClick = onOpenSettings) {
-                Icon(Icons.Filled.Settings, contentDescription = "Settings")
             }
         }
     }
