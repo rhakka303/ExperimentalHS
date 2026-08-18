@@ -351,7 +351,7 @@ private fun HypdroidApp(context: MainActivity) {
                     val args = buildLaunchArgs(game, homeDir).toMutableList()
                     val options = gameOptionsMap[game.name]
                     if (options?.bezelEnabled == true) {
-                        args += bezelLaunchArgs(mediaFolderPath, game.name)
+                        args += bezelLaunchArgs(homeDir, game.name)
                     }
                     options?.arguments?.forEach { entry ->
                         args += entry.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }

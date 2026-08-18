@@ -392,3 +392,17 @@ The actual fix: point Game folder at a *new, dedicated* folder (not the shared m
 - Daphne-native: real gameplay video with the scoreboard overlay, plus real physical controller input (movement and a custom-configured button binding) confirmed working.
 - Zipped Singe: real gameplay video playing correctly.
 - Unzipped Singe-script depending on a shared Framework-style library folder: reached a real Framework-rendered screen (a rankings/leaderboard UI with custom fonts) that only renders if the shared library code loaded and ran correctly - definitive proof the sibling resolution works end-to-end, not just in theory.
+
+## Fix: Bezel toggle no longer crashes hypseus on launch (#51)
+
+Enabling the per-game Bezel toggle (#31) with a real matching bezel PNG present used to crash hypseus almost immediately on launch (`SIGABRT`, `FORTIFY: pthread_mutex_lock called on a destroyed mutex`, ~26ms after `SDL_main()` started - before hypseus's own logging even ran). Confirmed reproducible across multiple sessions, with the toggle left off as the standing workaround.
+
+**Fix:** moved bezel art lookup from `<media folder>/bezel/<gamename>.png` to `<Game folder>/bezels/<gamename>.png` - hypseus's own native default convention (`video.cpp:130`'s `g_bezel_path` defaults to the literal relative string `"bezels"`, and `homedir::set_homedir()` already auto-creates this exact folder under `-homedir` on every launch regardless of whether it's ever used - see #60's writeup above). Since #60 unified `-homedir` to always be the picked Game folder itself for every category, this needs no per-category special-casing either - `bezelArtFile()`/`bezelLaunchArgs()` in `GameOptions.kt` now key off the picked Game folder directly instead of the Media folder, removing Bezel's dependency on the Media folder being set at all.
+
+**Note on root cause:** the exact original crash mechanism was never conclusively pinned down via a symbol-resolved native backtrace (the planned `llvm-nm`/`addr2line` investigation from #51's original scope was never needed) - the folder relocation fully and repeatably resolves the crash across all three game categories, confirmed via real bezel art loading and rendering correctly with real launch-arg evidence in `hypseus.log` (`Loaded bezel file: ...` with no error), not just "it doesn't crash anymore." Worth being honest that this is a confirmed fix, not a fully explained one - if a similar crash signature ever resurfaces elsewhere, don't assume this same fix automatically applies without re-verifying.
+
+**Result, verified on the physical Retroid Pocket 5 across all three game categories, each with Bezel toggled on and a real bezel PNG present:**
+
+- Daphne-native: real bezel art (cabinet-style side panels, scoreboard) rendered correctly around real gameplay video, no crash.
+- Zipped Singe: real bezel art rendered correctly, no crash.
+- Unzipped Singe-script: real bezel art rendered correctly, no crash.
