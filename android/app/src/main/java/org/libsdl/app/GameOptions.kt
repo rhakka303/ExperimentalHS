@@ -77,19 +77,28 @@ fun resolveCoverArtFile(mediaFolderPath: String?, gameName: String, override: Co
     return coverArtFile(mediaFolderPath, gameName, effectiveType)
 }
 
-// <media>/bezel/<gamename>.png, matching #31's planning. -bezeldir must
-// always be passed alongside -bezel - confirmed in video.cpp:130, hypseus's
-// own relative default can never resolve correctly on this Android port
-// (same SDL relative-path routing issue as #29's Bug 2).
-fun bezelArtFile(mediaFolderPath: String?, gameName: String): File? {
-    if (mediaFolderPath == null) return null
-    val file = File(mediaFolderPath, "bezel/$gameName.png")
+// <Game folder>/bezels/<gamename>.png - hypseus's own native convention,
+// not a Hypdroid invention (#51): video.cpp:130's g_bezel_path defaults to
+// the literal relative string "bezels", and homedir::set_homedir() already
+// auto-creates this exact folder under -homedir on every single launch
+// regardless of whether it's ever used. Since #60, -homedir is always the
+// picked Game folder itself for every category, so this keys off
+// gameFolderPath directly - no more per-category special-casing needed.
+// Bezel no longer depends on the Media folder being set at all.
+//
+// -bezeldir must always be passed alongside -bezel - confirmed in
+// video.cpp:130, hypseus's own relative default can never resolve
+// correctly on this Android port (same SDL relative-path routing issue as
+// #29's Bug 2).
+fun bezelArtFile(gameFolderPath: String?, gameName: String): File? {
+    if (gameFolderPath == null) return null
+    val file = File(gameFolderPath, "bezels/$gameName.png")
     return if (file.exists()) file else null
 }
 
-fun bezelLaunchArgs(mediaFolderPath: String?, gameName: String): List<String> {
-    bezelArtFile(mediaFolderPath, gameName) ?: return emptyList()
-    val bezelDir = File(mediaFolderPath, "bezel").absolutePath
+fun bezelLaunchArgs(gameFolderPath: String?, gameName: String): List<String> {
+    bezelArtFile(gameFolderPath, gameName) ?: return emptyList()
+    val bezelDir = File(gameFolderPath, "bezels").absolutePath
     return listOf("-bezeldir", bezelDir, "-bezel", "$gameName.png")
 }
 
