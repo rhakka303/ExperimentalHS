@@ -374,6 +374,18 @@ private fun HypdroidApp(context: MainActivity) {
         Screen.ManageGameFolder -> FolderManageScreen(
             title = "Game folder",
             path = gameFolderPath,
+            // #60 - the singe/roms/vldp layout is a real hypseus/Singe
+            // requirement (every fan-made game's own script hardcodes
+            // BASEDIR = "singe", expecting it as a sibling of roms/vldp at
+            // the picked folder's own top level), not obvious from the
+            // folder picker alone.
+            instructions = "Recommended folder name: hypseus\n\n" +
+                "Create subfolders inside your game folder:\n" +
+                "- roms - Daphne-native ROM(s)\n" +
+                "- vldp - Daphne-native framefile folder(s)\n" +
+                "- singe - fan-made games\n\n" +
+                "Unzipped Game Requirements:\n" +
+                "- Framework - required in singe folder",
             onChange = onChooseGameFolder,
             onBack = { currentScreen = Screen.Settings },
         )

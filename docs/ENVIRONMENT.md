@@ -360,3 +360,35 @@ Added the `HYPDROID` wordmark (`asset/Hypdroid_Logo_YXBA.png`, already in the re
 **Fix:** hoisted the current page to a `carouselPage` state in `HypdroidApp`, which survives screen navigation (it's never torn down, unlike `HomeScreen`). Passed down to `GameCarousel` as `initialPage`; a `LaunchedEffect` collecting `snapshotFlow { pagerState.currentPage }` syncs it back up to `HypdroidApp` on every page change (swipe, d-pad, or otherwise), so the next time `Screen.Home` recomposes, the new `pagerState` starts at the restored page instead of 0.
 
 **Result, verified on the physical Retroid Pocket 5:** focused a non-first game in the carousel, pressed down to open its Options screen, backed out - the carousel was still showing that same game, not reset to the first one.
+
+## Required Game folder layout: singe/roms/vldp as true children of one dedicated folder (#60)
+
+The picked Game folder must directly contain `singe/`, `roms/`, and `vldp/` as immediate children:
+
+```text
+<picked Game folder, recommended name "hypseus">/
+  singe/
+    <fan-made game folder>/      (zipped or unzipped)
+    <Framework-style shared library folder(s)>/    (true siblings of the game folders)
+  roms/          (Daphne-native ROM zips)
+  vldp/          (Daphne-native framefiles)
+```
+
+This isn't a Hypdroid convention - it's a real hypseus/Singe requirement. Every fan-made game's own script hardcodes `BASEDIR = "singe"` and builds *both* its own directory (`MYDIR = BASEDIR .. "/" .. gamename`) and any shared library path (e.g. `dofile(BASEDIR .. "/FrameworkKimmy/globals.singe")`) from that identical prefix - confirmed by reading a real game's own `.singe` script, not assumed. That means the game folder and any shared library folder(s) it depends on must be true siblings, both direct children of a folder literally named `singe`.
+
+**Two earlier, wrong versions of this requirement, corrected through discussion with the owner (5 years of hands-on hypseus-singe experience) before any of this was built:**
+
+1. Re-picking to the existing picked folder's *parent* directly - wrong, since on the owner's real device that parent is a shared multi-emulator ROMs root already holding 20+ unrelated console folders (3do, gamecube, n64, psx, etc.), which would collide with whatever else already uses `roms/`/`vldp/` there.
+2. Moving only the individual game folders into a new nested `singe/` subfolder while leaving the shared library folder(s) at the previous top level (or vice versa) - wrong, since it breaks the identical `BASEDIR` prefix both paths are built from.
+
+The actual fix: point Game folder at a *new, dedicated* folder (not the shared multi-emulator root), with `-homedir`/`-datadir` simplified to just that picked folder itself for **both** game categories - removing the previous parent-folder special case for Singe games (from the #38 fix, which existed only because the picked folder used to be manually named `singe` and stand in for that subfolder itself).
+
+- `GameScanner.kt` now scans `<picked folder>/singe/*` for fan-made games instead of the picked folder's own top level.
+- `LaunchArgs.kt`'s `-homedir`/`-datadir` computation is now identical for `DAPHNE_NATIVE` and `SINGE_ZIPPED`/`SINGE_SCRIPT` - always the picked folder itself.
+- The "Manage Game Folder" screen now shows this required structure as on-screen instructions (recommended folder name, then `roms`/`vldp`/`singe` and what goes in each), since it's real, non-obvious tribal knowledge that shouldn't only live in this doc.
+
+**Result, verified on the physical Retroid Pocket 5 against a real test folder covering all three game forms:**
+
+- Daphne-native: real gameplay video with the scoreboard overlay, plus real physical controller input (movement and a custom-configured button binding) confirmed working.
+- Zipped Singe: real gameplay video playing correctly.
+- Unzipped Singe-script depending on a shared Framework-style library folder: reached a real Framework-rendered screen (a rankings/leaderboard UI with custom fonts) that only renders if the shared library code loaded and ran correctly - definitive proof the sibling resolution works end-to-end, not just in theory.

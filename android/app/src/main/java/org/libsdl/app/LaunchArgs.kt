@@ -1,7 +1,5 @@
 package org.libsdl.app
 
-import java.io.File
-
 /**
  * Builds the CLI-equivalent argv hypseus expects, mirroring the desktop
  * invocations from the README/doc/CmdLine.md - minus argv[0]. SDL's own
@@ -25,35 +23,19 @@ import java.io.File
  * "vldp" (argv[2]) selects hypseus's software MPEG laserdisc-player
  * backend - always used here since there's no real LDP hardware.
  *
- * -homedir/-datadir differ by category, since the two categories expect
- * genuinely different things to be relative to it:
- *
- * SINGE_ZIPPED/SINGE_SCRIPT need the PARENT of the picked/scanned game
- * folder. Confirmed via a real Singe game's own unzipped .singe script
- * (every Singe/LaserForge game has this same pattern, not specific to one
- * game): it hardcodes BASEDIR = "singe" and does
- * dofile(BASEDIR .. "/Framework/globals.singe"), i.e. it expects the real
- * homedir to have a "singe" subfolder containing both the game and the
- * shared Framework code - exactly matching hypseus's own upstream doc
- * convention (-framefile <home>/singe/<game>/<game>.txt). The picked folder
- * IS that "singe" subfolder (GameScanner.kt already scans it correctly for
- * game subfolders), so -homedir must be one level up. Passing the picked
- * folder itself as -homedir made "singe/Framework/globals.singe" resolve to
- * a nonexistent doubly-nested path, silently failing dofile() and leaving
- * Lua in a corrupted state that only crashed much later, inside an
- * unrelated-looking luaopen_os/strchr call - diagnosed via a real on-device
- * boot test and a full native crash backtrace, not guessed.
- *
- * DAPHNE_NATIVE needs the picked folder ITSELF, not its parent. hypseus's
- * own ROM lookup (game.cpp's load_roms() -> homedir::get_romfile()) builds
- * "<homedir>/roms/<name>.zip" - GameScanner.kt already scans for exactly
- * that path relative to the picked folder (<home>/roms/<name>.zip,
- * <home>/vldp/<name>/<name>.txt), confirmed working in #28. Applying the
- * Singe "-homedir is the parent" rule here too made hypseus look one level
- * too high (the picked folder's parent's own "roms/" - a real folder on a
- * shared SD card that happens to also exist, just the wrong one), and it
- * silently reported the ROM missing instead of crashing - diagnosed by
- * reading get_romfile()/find_romfile() in homedir.cpp, not guessed either.
+ * -homedir/-datadir is always the picked Game folder itself, for both
+ * categories (#60) - the picked folder is required to directly contain
+ * singe/, roms/, and vldp/ as true immediate children (see GameScanner.kt),
+ * matching both hypseus's own Daphne-native ROM lookup convention
+ * (game.cpp's load_roms() -> homedir::get_romfile() builds
+ * "<homedir>/roms/<name>.zip") and Singe's own hardcoded BASEDIR = "singe"
+ * convention used by every fan-made game's script. An earlier version of
+ * this passed the picked folder's *parent* as -homedir for Singe games,
+ * working around the picked folder itself having been named "singe" - that
+ * was a real workaround for a real folder-naming coincidence, not a genuine
+ * requirement, and broke down once the picked folder needed to hold roms/
+ * and vldp/ too (see #60's full history for why the naive "just re-pick the
+ * parent" fix was wrong before this).
  */
 fun buildLaunchArgs(game: Game, homeDir: String): Array<String> {
     val args = mutableListOf<String>()
@@ -76,11 +58,7 @@ fun buildLaunchArgs(game: Game, homeDir: String): Array<String> {
         }
     }
 
-    val trueHomeDir = when (game.category) {
-        GameCategory.DAPHNE_NATIVE -> homeDir
-        GameCategory.SINGE_ZIPPED, GameCategory.SINGE_SCRIPT -> File(homeDir).parent ?: homeDir
-    }
-    args += listOf("-homedir", "$trueHomeDir/", "-datadir", "$trueHomeDir/")
+    args += listOf("-homedir", "$homeDir/", "-datadir", "$homeDir/")
     // Baked-in defaults for every launch, per the owner: real fullscreen
     // gameplay, and SDL_Gamepad enabled (this is gamepad-first hardware).
     // No -haptic - rumble tuning is a later, separate decision.
