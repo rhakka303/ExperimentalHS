@@ -54,6 +54,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -235,6 +236,10 @@ private fun HypdroidApp(context: MainActivity) {
     // LaunchedEffect needed - the initial remember{} read is enough.
     var globalCoverArtEnabled by remember { mutableStateOf(loadGlobalCoverArtEnabled(context)) }
     var globalCoverArtType by remember { mutableStateOf(loadGlobalCoverArtType(context)) }
+    // #66 - Background Art. Same synchronous-read pattern as Global Cover
+    // Art above.
+    var backgroundArtEnabled by remember { mutableStateOf(loadBackgroundArtEnabled(context)) }
+    var defaultArtEnabled by remember { mutableStateOf(loadDefaultArtEnabled(context)) }
 
     LaunchedEffect(games) {
         gameOptionsMap = games.associate { it.name to loadGameOptions(context, it.name) }
@@ -340,6 +345,8 @@ private fun HypdroidApp(context: MainActivity) {
             gameOptionsMap = gameOptionsMap,
             globalCoverArtEnabled = globalCoverArtEnabled,
             globalCoverArtType = globalCoverArtType,
+            backgroundArtEnabled = backgroundArtEnabled,
+            defaultArtEnabled = defaultArtEnabled,
             carouselPage = carouselPage,
             onCarouselPageChanged = { carouselPage = it },
             onChooseFolder = onChooseGameFolder,
@@ -417,6 +424,16 @@ private fun HypdroidApp(context: MainActivity) {
                 saveGlobalCoverArtType(context, type)
                 globalCoverArtType = type
             },
+            backgroundArtEnabled = backgroundArtEnabled,
+            defaultArtEnabled = defaultArtEnabled,
+            onBackgroundArtToggle = { enabled ->
+                saveBackgroundArtEnabled(context, enabled)
+                backgroundArtEnabled = enabled
+            },
+            onDefaultArtToggle = { enabled ->
+                saveDefaultArtEnabled(context, enabled)
+                defaultArtEnabled = enabled
+            },
             onBack = { currentScreen = Screen.Settings },
         )
         Screen.About -> AboutScreen(
@@ -486,6 +503,8 @@ private fun HomeScreen(
     gameOptionsMap: Map<String, GameOptions>,
     globalCoverArtEnabled: Boolean,
     globalCoverArtType: CoverArtType,
+    backgroundArtEnabled: Boolean,
+    defaultArtEnabled: Boolean,
     carouselPage: Int,
     onCarouselPageChanged: (Int) -> Unit,
     onChooseFolder: () -> Unit,
@@ -493,63 +512,101 @@ private fun HomeScreen(
     onOpenOptions: (Game) -> Unit,
     onPlay: (Game) -> Unit,
 ) {
-    // Per the owner's #36 redesign: the dashboard never shows the raw
-    // folder path - just the game carousel, plus a "+" (add/change game
-    // folder) and gear (Settings, #30) icon pair in the upper right.
-    //
-    // #65 - the top bar (logo + icons) is a real layout region here, not an
-    // overlay floating on top of the carousel's own full-screen Box. The
-    // carousel is confined to the space below it, so the two never occupy
-    // overlapping screen bounds - #49's declaration-order workaround (the
-    // icon Row had to be declared *after* the carousel purely to win touch
-    // priority in the region where they used to visually overlap) is no
-    // longer needed at all.
-    Column(modifier = Modifier.fillMaxSize()) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth().padding(8.dp),
-        ) {
-            Image(
-                painter = painterResource(id = R.drawable.hypdroid_logo),
-                contentDescription = "Hypdroid",
-                modifier = Modifier.height(40.dp),
+    // #66 - resolved from whichever game is currently focused in the
+    // carousel (carouselPage, kept in sync by GameCarousel's own
+    // snapshotFlow). Instant swap, not animated - the whole point of
+    // hoisting carouselPage up here already (#52) is that it updates
+    // synchronously with the pager, so this just re-resolves on every
+    // recomposition without any extra plumbing.
+    val focusedGame = games.getOrNull(carouselPage)
+    val backgroundFile = focusedGame?.let {
+        backgroundArtFile(mediaFolderPath, it.name, backgroundArtEnabled, defaultArtEnabled)
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        if (backgroundFile != null) {
+            AsyncImage(
+                model = backgroundFile,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
             )
-            Spacer(modifier = Modifier.weight(1f))
-            IconButton(onClick = onChooseFolder) {
-                Icon(Icons.Filled.Add, contentDescription = "Choose game folder")
-            }
-            IconButton(onClick = onOpenSettings) {
-                Icon(Icons.Filled.Settings, contentDescription = "Settings")
-            }
         }
 
-        Box(
-            modifier = Modifier.fillMaxWidth().weight(1f),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (pathResolutionFailed) {
-                Text(
-                    "Couldn't resolve a real filesystem path for that folder " +
-                        "on this device. Try a different folder.",
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(24.dp),
+        // Per the owner's #36 redesign: the dashboard never shows the raw
+        // folder path - just the game carousel, plus a "+" (add/change
+        // game folder) and gear (Settings, #30) icon pair in the upper
+        // right.
+        //
+        // #65 - the top bar (logo + icons) is a real layout region here,
+        // not an overlay floating on top of the carousel's own full-screen
+        // Box. The carousel is confined to the space below it, so the two
+        // never occupy overlapping screen bounds - #49's declaration-order
+        // workaround (the icon Row had to be declared *after* the carousel
+        // purely to win touch priority in the region where they used to
+        // visually overlap) is no longer needed at all.
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    // #66 - semi-transparent dark scrim, only while a real
+                    // background image is actually showing underneath -
+                    // keeps the logo/icons legible regardless of the
+                    // image's own tone/brightness. No scrim needed against
+                    // the plain background (Background Art off, or this
+                    // game just has no art) - already legible on its own.
+                    .then(
+                        if (backgroundFile != null) {
+                            Modifier.background(Color.Black.copy(alpha = 0.5f))
+                        } else {
+                            Modifier
+                        },
+                    )
+                    .padding(8.dp),
+            ) {
+                Image(
+                    painter = painterResource(id = R.drawable.hypdroid_logo),
+                    contentDescription = "Hypdroid",
+                    modifier = Modifier.height(40.dp),
                 )
-            } else if (gameFolderPath == null) {
-                Text("No games yet. Tap + to choose a game folder.")
-            } else if (games.isEmpty()) {
-                Text("No games found in this folder.")
-            } else {
-                GameCarousel(
-                    games = games,
-                    mediaFolderPath = mediaFolderPath,
-                    gameOptionsMap = gameOptionsMap,
-                    globalCoverArtEnabled = globalCoverArtEnabled,
-                    globalCoverArtType = globalCoverArtType,
-                    initialPage = carouselPage,
-                    onPageChanged = onCarouselPageChanged,
-                    onPlay = onPlay,
-                    onOpenOptions = onOpenOptions,
-                )
+                Spacer(modifier = Modifier.weight(1f))
+                IconButton(onClick = onChooseFolder) {
+                    Icon(Icons.Filled.Add, contentDescription = "Choose game folder")
+                }
+                IconButton(onClick = onOpenSettings) {
+                    Icon(Icons.Filled.Settings, contentDescription = "Settings")
+                }
+            }
+
+            Box(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (pathResolutionFailed) {
+                    Text(
+                        "Couldn't resolve a real filesystem path for that folder " +
+                            "on this device. Try a different folder.",
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(24.dp),
+                    )
+                } else if (gameFolderPath == null) {
+                    Text("No games yet. Tap + to choose a game folder.")
+                } else if (games.isEmpty()) {
+                    Text("No games found in this folder.")
+                } else {
+                    GameCarousel(
+                        games = games,
+                        mediaFolderPath = mediaFolderPath,
+                        gameOptionsMap = gameOptionsMap,
+                        globalCoverArtEnabled = globalCoverArtEnabled,
+                        globalCoverArtType = globalCoverArtType,
+                        initialPage = carouselPage,
+                        onPageChanged = onCarouselPageChanged,
+                        onPlay = onPlay,
+                        onOpenOptions = onOpenOptions,
+                    )
+                }
             }
         }
     }

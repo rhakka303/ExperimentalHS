@@ -140,8 +140,10 @@ fun FolderManageScreen(
 }
 
 /**
- * #47's Global Cover Art override, relocated off the main Settings list into
- * its own screen. Functionally unchanged - same Switch, same picker.
+ * #47's Global Cover Art override and #66's Background Art, side by side as
+ * two double-width cards - matching the main Settings grid's card style,
+ * just wider since each needs room for a toggle + conditional follow-up
+ * control stacked underneath.
  */
 @Composable
 fun AppSettingsScreen(
@@ -149,6 +151,10 @@ fun AppSettingsScreen(
     globalCoverArtType: CoverArtType,
     onGlobalCoverArtToggle: (Boolean) -> Unit,
     onGlobalCoverArtTypeChange: (CoverArtType) -> Unit,
+    backgroundArtEnabled: Boolean,
+    defaultArtEnabled: Boolean,
+    onBackgroundArtToggle: (Boolean) -> Unit,
+    onDefaultArtToggle: (Boolean) -> Unit,
     onBack: () -> Unit,
 ) {
     BackHandler(onBack = onBack)
@@ -166,25 +172,66 @@ fun AppSettingsScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Global Cover Art", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    "On: same art for every game. Off: each game picks its own.",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            OutlinedCard(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Global Cover Art", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                "On: same art for every game. Off: each game picks its own.",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                        Switch(checked = globalCoverArtEnabled, onCheckedChange = onGlobalCoverArtToggle)
+                    }
+                    if (globalCoverArtEnabled) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                globalCoverArtType.name,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Button(onClick = { showGlobalCoverArtPicker = true }) { Text("Change") }
+                        }
+                    }
+                }
             }
-            Switch(checked = globalCoverArtEnabled, onCheckedChange = onGlobalCoverArtToggle)
-        }
-        if (globalCoverArtEnabled) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    globalCoverArtType.name,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.weight(1f),
-                )
-                Button(onClick = { showGlobalCoverArtPicker = true }) { Text("Change") }
+
+            OutlinedCard(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Background Art", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                "On: uses art from bg folder. Off: default white.",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                        Switch(checked = backgroundArtEnabled, onCheckedChange = onBackgroundArtToggle)
+                    }
+                    // #66 - Default Art overrides every game's own bg art
+                    // with bg/default.png, same override shape as Global
+                    // Cover Art - only shown/meaningful while Background
+                    // Art itself is on.
+                    if (backgroundArtEnabled) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Default Art", style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    "Uses default.png for all games.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
+                            Switch(checked = defaultArtEnabled, onCheckedChange = onDefaultArtToggle)
+                        }
+                    }
+                }
             }
         }
     }
