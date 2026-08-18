@@ -405,11 +405,16 @@ private fun HypdroidApp(context: MainActivity) {
             // coverArtFile() hardcodes the .png extension). Bezel art is
             // deliberately not mentioned here - it comes from hypseus's own
             // auto-created bezels/ folder inside the Game folder, not this one.
+            // bg (#66) added the same way - backgroundArtFile() reads it
+            // straight from this folder, full-screen with no cropping
+            // adjustment, so it needs to already match the device's own
+            // resolution rather than relying on scale-to-fit.
             instructions = "Recommended folder name: media\n\n" +
                 "Create subfolders inside your media folder:\n" +
                 "- box - 2d or 3d box art\n" +
                 "- cd - CD/laserdisc art\n" +
-                "- logo - logo art\n\n" +
+                "- logo - logo art\n" +
+                "- bg - Background art, same resolution as your device\n\n" +
                 "Required format: PNG",
             onChange = { pickMediaFolder.launch(null) },
             onBack = { currentScreen = Screen.Settings },
