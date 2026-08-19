@@ -1,8 +1,11 @@
 package org.libsdl.app
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.DocumentsContract
@@ -68,6 +71,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
+import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
 import java.io.File
 import kotlin.math.absoluteValue
@@ -278,6 +282,26 @@ private fun HypdroidApp(context: MainActivity) {
         mediaFolderPath = realPath
         if (realPath == null) {
             clearPersistedFolderUri(context, PREF_MEDIA_FOLDER_URI)
+        }
+    }
+
+    // #76 - Android 13+ blocks raw-path reads of image files (cover art)
+    // even inside an SAF-granted folder, on at least some devices/OEMs.
+    // READ_MEDIA_IMAGES only exists as a runtime-requestable permission on
+    // API 33+; requesting it below that is a no-op that can't affect
+    // devices like the Retroid Pocket 5 where this already works.
+    val requestMediaImagesPermission = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) { /* no-op - GameCard/Coil just retries loading on next recomposition either way */ }
+    LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= 33) {
+            val alreadyGranted = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.READ_MEDIA_IMAGES,
+            ) == PackageManager.PERMISSION_GRANTED
+            if (!alreadyGranted) {
+                requestMediaImagesPermission.launch(Manifest.permission.READ_MEDIA_IMAGES)
+            }
         }
     }
 
