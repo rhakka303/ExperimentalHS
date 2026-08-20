@@ -1,0 +1,7 @@
+<resources>
+    <!-- Overrides src/main's app_name for this flavor only - the Retroid
+         Pocket 5 / gamepad-first handheld build. Shares the same
+         laserdisc-circle launcher icon (mipmap/ic_launcher in src/main).
+         No behavior differences from src/main yet - name/package ID only. -->
+    <string name="app_name">Hypdroid Handheld</string>
+</resources>

@@ -16,6 +16,7 @@ android {
         // its assumed API surface is a guaranteed subset of API 30+.
         minSdkVersion 30
         targetSdkVersion 35
+        applicationId "org.libsdl.app"
         versionCode 1
         versionName "1.0"
         externalNativeBuild {
@@ -48,6 +49,23 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+    // Two flavors, same codebase, zero behavior differences right now -
+    // just distinct names/package IDs so both can be installed side by
+    // side. "handheld" ("Hypdroid Handheld") is the Retroid Pocket 5
+    // target. "full" ("Hypdroid Touch") is the stock/OEM Android target.
+    // Functional differences (All Files Access, touch controls) are a
+    // deliberate later step, not part of this change.
+    flavorDimensions += "access"
+    productFlavors {
+        handheld {
+            dimension "access"
+        }
+        full {
+            dimension "access"
+            applicationIdSuffix ".full"
+            versionNameSuffix "-full"
         }
     }
     compileOptions {

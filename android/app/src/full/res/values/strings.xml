@@ -1,0 +1,8 @@
+<resources>
+    <!-- Overrides src/main's app_name for this flavor only - the stock/OEM
+         Android target (touch-first, non-handheld devices). Shares the
+         same laserdisc-circle launcher icon (mipmap/ic_launcher in
+         src/main). No behavior differences from src/main yet - name/
+         package ID only. -->
+    <string name="app_name">Hypdroid Touch</string>
+</resources>
