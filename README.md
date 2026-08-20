@@ -25,7 +25,7 @@ Media folder (recommended folder name: media)
 
 **Folders you create:**
 
-```
+```text
 hypseus/
 ├── roms/     ← Daphne-native ROM(s)
 ├── vldp/     ← Daphne-native framefile folder(s)
@@ -40,7 +40,7 @@ media/
 
 **Folders Hypseus creates at first launch:**
 
-```
+```text
 hypseus/
 ├── bezels/     ← your game bezels here
 ├── fonts/
