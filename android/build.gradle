@@ -21,6 +21,9 @@ allprojects {
     repositories {
         mavenCentral()
         google()
+        // #83 - RadialGamePad (touch controls overlay) is only published on
+        // JitPack, not Maven Central/Google's repos.
+        maven { url 'https://jitpack.io' }
     }
 }
 

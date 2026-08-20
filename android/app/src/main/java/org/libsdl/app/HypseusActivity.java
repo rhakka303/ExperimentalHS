@@ -1,5 +1,7 @@
 package org.libsdl.app;
 
+import android.os.Bundle;
+
 /**
  * hypseus links SDL3 (and everything else - Vorbis, libzip, libmpeg2) as a
  * static library into a single libmain.so, rather than the stock SDL
@@ -11,6 +13,13 @@ package org.libsdl.app;
  */
 public class HypseusActivity extends SDLActivity {
     public static final String EXTRA_ARGS = "org.libsdl.app.HypseusActivity.EXTRA_ARGS";
+
+    // #83 - a no-op unless the Settings "Touch Controls" toggle is on (see
+    // TouchOverlay.attach()). Registered/torn down for the lifetime of a
+    // single game session rather than per onResume/onPause, since it's a
+    // virtual SDL joystick, not something that needs to react to Android
+    // focus changes the way real input devices do.
+    private TouchOverlay touchOverlay;
 
     @Override
     protected String[] getLibraries() {
@@ -29,5 +38,21 @@ public class HypseusActivity extends SDLActivity {
     protected String[] getArguments() {
         String[] args = getIntent().getStringArrayExtra(EXTRA_ARGS);
         return args != null ? args : new String[0];
+    }
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        touchOverlay = new TouchOverlay(this);
+        touchOverlay.attach();
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (touchOverlay != null) {
+            touchOverlay.detach();
+            touchOverlay = null;
+        }
+        super.onDestroy();
     }
 }

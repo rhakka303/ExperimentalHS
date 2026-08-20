@@ -126,4 +126,10 @@ dependencies {
     // arbitrary file paths under the user's picked media folder, which
     // nothing before this needed.
     implementation 'io.coil-kt:coil-compose:2.6.0'
+
+    // #83 - Touch controls overlay (Touch flavor). RadialGamePad is a plain
+    // Android View (not Compose) added directly into HypseusActivity's own
+    // SDLActivity-provided root layout - see TouchControls.kt.
+    implementation 'com.github.swordfish90:radialgamepad:2.0.0'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.6.4'
 }

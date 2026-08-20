@@ -177,6 +177,7 @@ private sealed class Screen {
     object AppSettings : Screen()
     object About : Screen()
     object ControllerConfig : Screen()
+    object TouchControls : Screen()
     data class GameOptionsFor(val gameName: String) : Screen()
 }
 
@@ -245,6 +246,12 @@ private fun HypdroidApp(context: MainActivity) {
     // Art above.
     var backgroundArtEnabled by remember { mutableStateOf(loadBackgroundArtEnabled(context)) }
     var defaultArtEnabled by remember { mutableStateOf(loadDefaultArtEnabled(context)) }
+    // #83 - Touch Controls. Same synchronous-read pattern as the toggles
+    // above; HypseusActivity reads these same SharedPreferences directly at
+    // game-launch time rather than via an Intent extra (see TouchControls.kt).
+    var touchControlsEnabled by remember { mutableStateOf(loadTouchControlsEnabled(context)) }
+    var touchControlsStickMode by remember { mutableStateOf(loadTouchControlsStickMode(context)) }
+    var touchControlsOpacity by remember { mutableStateOf(loadTouchControlsOpacity(context)) }
 
     LaunchedEffect(games) {
         gameOptionsMap = games.associate { it.name to loadGameOptions(context, it.name) }
@@ -408,6 +415,7 @@ private fun HypdroidApp(context: MainActivity) {
             onOpenAppSettings = { currentScreen = Screen.AppSettings },
             onOpenControllerConfig = { currentScreen = Screen.ControllerConfig },
             onOpenAbout = { currentScreen = Screen.About },
+            onOpenTouchControls = { currentScreen = Screen.TouchControls },
             onBack = { currentScreen = Screen.Home },
         )
         Screen.ManageGameFolder -> FolderManageScreen(
@@ -476,6 +484,24 @@ private fun HypdroidApp(context: MainActivity) {
         )
         Screen.About -> AboutScreen(
             context = context,
+            onBack = { currentScreen = Screen.Settings },
+        )
+        Screen.TouchControls -> TouchControlsScreen(
+            touchControlsEnabled = touchControlsEnabled,
+            stickModeEnabled = touchControlsStickMode,
+            opacity = touchControlsOpacity,
+            onTouchControlsToggle = { enabled ->
+                saveTouchControlsEnabled(context, enabled)
+                touchControlsEnabled = enabled
+            },
+            onStickModeToggle = { stickMode ->
+                saveTouchControlsStickMode(context, stickMode)
+                touchControlsStickMode = stickMode
+            },
+            onOpacityChange = { value ->
+                saveTouchControlsOpacity(context, value)
+                touchControlsOpacity = value
+            },
             onBack = { currentScreen = Screen.Settings },
         )
         Screen.ControllerConfig -> {
