@@ -59,17 +59,13 @@
          Framework instead (see MainActivity.kt): scoped to exactly the
          folder(s) the user explicitly selects, nothing else. -->
 
-    <!-- #76 - Android 13+ (API 33+) blocks raw-path reads of image files
-         (cover art) even inside a folder the user picked via SAF, on at
-         least some devices/OEMs - confirmed via a real MediaProvider
-         "Permission ... is denied" error on a real Android 13 tablet.
-         READ_MEDIA_IMAGES only exists as a concept on API 33+ and is a
-         no-op on everything below that (including the Retroid Pocket 5),
-         so this can't change behavior there. Much narrower than All
-         Files Access above - covers only image files, not the whole
-         device. Requested at runtime, gated to SDK_INT >= 33, in
-         MainActivity.kt. -->
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <!-- #90 - READ_MEDIA_IMAGES (added in #76 for a confirmed MediaProvider
+         "Permission ... is denied" error on a real Android 13 tablet) was
+         removed after testing during #88 found real cover art rendering
+         fine on the Retroid Pocket 5 (also API 33) with no such permission
+         granted at all - the original denial looks like it was
+         Samsung/One UI-specific enforcement, not a general API 33+
+         restriction. See #90 for the full investigation. -->
 
     <!-- Allow access to Internet -->
     <!-- if you want to connect to the network or internet, uncomment this. -->

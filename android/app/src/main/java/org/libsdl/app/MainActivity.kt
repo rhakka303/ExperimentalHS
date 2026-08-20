@@ -1,9 +1,7 @@
 package org.libsdl.app
 
-import android.Manifest
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -73,7 +71,6 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import coil.compose.AsyncImage
@@ -168,17 +165,6 @@ private fun resolveRealPath(treeUri: Uri): String? {
 
     val file = File(path)
     return if (file.exists() && file.isDirectory) path else null
-}
-
-// #76/#88 - READ_MEDIA_IMAGES only exists as a runtime-requestable
-// permission on API 33+; below that it's a no-op that can't affect devices
-// like the Retroid Pocket 5 where raw-path reads already work, so this
-// reports "granted" there rather than a permission that doesn't apply.
-private fun isMediaImagesGranted(context: Context): Boolean {
-    return Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(
-        context,
-        Manifest.permission.READ_MEDIA_IMAGES,
-    ) == PackageManager.PERMISSION_GRANTED
 }
 
 // A sealed class rather than a plain enum since #31's per-game options
@@ -311,43 +297,28 @@ private fun HypdroidApp(context: MainActivity) {
         }
     }
 
-    // #88 - both permissions below used to be requested automatically on
-    // every launch (a runtime popup for cover art, a full Settings-screen
-    // redirect for All Files Access) with zero in-app explanation first -
-    // the All Files Access one in particular was confirmed confusing.
-    // Both are now explicit actions from OnboardingScreen (first run) or
-    // the recovery rows on Manage Game Folder / Manage Media Folder
-    // (afterward) instead of firing unprompted. State here just tracks
-    // current status so those screens can render it and know when to swap
-    // an action button for a "granted" label.
-    var mediaImagesGranted by remember { mutableStateOf(isMediaImagesGranted(context)) }
+    // #88 - All Files Access used to be requested automatically on every
+    // launch, a full Settings-screen redirect with zero in-app explanation
+    // first - confirmed confusing. Now an explicit action from
+    // OnboardingScreen (first run) or the recovery row on Manage Game
+    // Folder (afterward) instead of firing unprompted. State here just
+    // tracks current status so those screens can render it and know when to
+    // swap the action button for a "granted" label.
     var allFilesAccessGranted by remember { mutableStateOf(isAllFilesAccessGranted(context)) }
-
-    // #76 - Android 13+ blocks raw-path reads of image files (cover art)
-    // even inside an SAF-granted folder, on at least some devices/OEMs.
-    // READ_MEDIA_IMAGES only exists as a runtime-requestable permission on
-    // API 33+; below that this launcher is simply never invoked.
-    val requestMediaImagesPermission = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-    ) { granted -> mediaImagesGranted = granted }
 
     // All Files Access has no runtime popup on API 30+ - the only path is
     // this Settings-screen redirect (see StorageAccessFlavor.kt), so there's
-    // no direct result callback the way there is above. Re-checked below
-    // instead, on resume.
+    // no direct result callback - re-checked below instead, on resume.
     val onRequestAllFilesAccess = { requestAllFilesAccessIfNeeded(context) }
 
-    // Neither permission above has a reliable single "just granted" signal
-    // on its own (the All Files Access redirect returns to onResume with no
-    // result at all; even the runtime popup's callback can be bypassed by
-    // backgrounding the app and granting from Android's own Settings
-    // instead) - re-checking both whenever this Activity resumes covers
+    // The redirect above returns to onResume with no result callback at
+    // all, and even a runtime-popup-style grant can happen from Android's
+    // own Settings while backgrounded - re-checking on every resume covers
     // every path a user could take back to the app.
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                mediaImagesGranted = isMediaImagesGranted(context)
                 allFilesAccessGranted = isAllFilesAccessGranted(context)
             }
         }
@@ -413,9 +384,6 @@ private fun HypdroidApp(context: MainActivity) {
 
     if (!onboardingComplete) {
         OnboardingScreen(
-            mediaImagesRequired = Build.VERSION.SDK_INT >= 33,
-            mediaImagesGranted = mediaImagesGranted,
-            onRequestMediaImages = { requestMediaImagesPermission.launch(Manifest.permission.READ_MEDIA_IMAGES) },
             allFilesAccessRequired = isAllFilesAccessSupported(),
             allFilesAccessGranted = allFilesAccessGranted,
             onRequestAllFilesAccess = onRequestAllFilesAccess,
@@ -536,22 +504,6 @@ private fun HypdroidApp(context: MainActivity) {
                 "- logo - logo art\n" +
                 "- bg - Background art, same resolution as your device\n\n" +
                 "Required format: PNG",
-            // #88 - recovery path for onboarding's cover-art permission row.
-            // Null below API 33, same gating as onboarding itself - the
-            // permission doesn't exist as a concept on older devices.
-            permissionRow = if (Build.VERSION.SDK_INT >= 33) {
-                {
-                    OnboardingPermissionRow(
-                        description = "Allow Hypdroid to display artwork stored on your device.",
-                        granted = mediaImagesGranted,
-                        grantedLabel = "Allowed",
-                        actionLabel = "Allow artwork",
-                        onAction = { requestMediaImagesPermission.launch(Manifest.permission.READ_MEDIA_IMAGES) },
-                    )
-                }
-            } else {
-                null
-            },
             onChange = { pickMediaFolder.launch(null) },
             onBack = { currentScreen = Screen.Settings },
         )
