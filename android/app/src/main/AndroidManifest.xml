@@ -110,7 +110,20 @@
             </intent-filter>
         </activity>
 
+        <!-- #85 - runs in its own private process, separate from the
+             dashboard's. SDL deliberately allows native main() to run only
+             once per process, and calls System.exit(0) if a second run is
+             attempted - which previously killed the entire app, dashboard
+             included, on every second game launch. Isolated here, that
+             teardown only ends the game's own process (see
+             HypseusActivity.onDestroy()), leaving the dashboard process
+             and all of its in-memory state untouched, and giving each game
+             session the fresh SDL/hypseus globals both actually require.
+             launchMode deliberately left as SDL's own template default -
+             changing process and task behavior together would make any
+             regression harder to isolate. -->
         <activity android:name="HypseusActivity"
+            android:process=":hypseus"
             android:label="@string/app_name"
             android:alwaysRetainTaskState="true"
             android:launchMode="singleInstance"
