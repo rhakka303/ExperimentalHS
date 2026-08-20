@@ -305,6 +305,14 @@ private fun HypdroidApp(context: MainActivity) {
         }
     }
 
+    // Calls into whichever flavor's own StorageAccessFlavor.kt is actually
+    // compiled in - Handheld's version does nothing at all (no behavior
+    // change), Touch's version requests All Files Access. See both
+    // flavors' own copies of that file for the real logic.
+    LaunchedEffect(Unit) {
+        requestAllFilesAccessIfNeeded(context)
+    }
+
     // Re-resolve previously-picked folders on every fresh launch, so the
     // dashboard doesn't reset to empty on every restart/crash (#36) - the
     // SAF grant itself already survives restarts via
