@@ -403,8 +403,17 @@ private fun HypdroidApp(context: MainActivity) {
                     options?.arguments?.forEach { entry ->
                         args += entry.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
                     }
+                    // #85 - the touch settings ride along on the Intent
+                    // rather than being read on the other side:
+                    // HypseusActivity runs in its own `:hypseus` process
+                    // now, where SharedPreferences aren't a dependable
+                    // channel (see TouchOverlay.attach()). These are the
+                    // live Compose values, already current.
                     val intent = Intent(context, HypseusActivity::class.java)
                         .putExtra(HypseusActivity.EXTRA_ARGS, args.toTypedArray())
+                        .putExtra(HypseusActivity.EXTRA_TOUCH_ENABLED, touchControlsEnabled)
+                        .putExtra(HypseusActivity.EXTRA_TOUCH_STICK_MODE, touchControlsStickMode)
+                        .putExtra(HypseusActivity.EXTRA_TOUCH_OPACITY, touchControlsOpacity)
                     context.startActivity(intent)
                 }
             },

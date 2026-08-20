@@ -131,15 +131,26 @@ class TouchOverlay(private val activity: Activity) {
 
     private val dpadStickId = 0
 
-    /** Only does anything if the Settings toggle is on - a no-op otherwise. */
-    fun attach() {
-        if (!loadTouchControlsEnabled(activity)) return
+    /**
+     * Only does anything if the Settings toggle is on - a no-op otherwise.
+     *
+     * #85 - these three values are passed in from the launching Intent
+     * rather than read from SharedPreferences here. HypseusActivity now
+     * runs in its own `:hypseus` process (see AndroidManifest.xml), and
+     * SharedPreferences are not a dependable cross-process channel: each
+     * process keeps its own in-memory cache, and the dashboard writes
+     * these with an asynchronous `.apply()`. Reading them here would work
+     * most of the time (a freshly-spawned game process does load from
+     * disk) but only by relying on undocumented flush ordering. The
+     * launching Intent is an explicit, synchronous hand-off instead.
+     */
+    fun attach(enabled: Boolean, stickMode: Boolean, opacity: Float) {
+        if (!enabled) return
 
-        val stickMode = loadTouchControlsStickMode(activity)
         val layout = SDLActivity.mLayout ?: return
         val metrics = activity.resources.displayMetrics
         val density = metrics.density
-        val opacityAlpha = (loadTouchControlsOpacity(activity) * 255f).toInt().coerceIn(0, 255)
+        val opacityAlpha = (opacity * 255f).toInt().coerceIn(0, 255)
         val padTheme = buildPadTheme(opacityAlpha)
 
         SDLControllerManager.nativeAddJoystick(
