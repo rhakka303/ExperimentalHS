@@ -10,3 +10,10 @@ import android.content.Context
 fun requestAllFilesAccessIfNeeded(context: Context) {
     // Intentionally empty.
 }
+
+// #88 - Handheld never uses this permission concept, regardless of Android
+// version - onboarding/recovery UI uses this to skip the row entirely
+// rather than show it in an always-granted state.
+fun isAllFilesAccessSupported(): Boolean = false
+
+fun isAllFilesAccessGranted(context: Context): Boolean = true
