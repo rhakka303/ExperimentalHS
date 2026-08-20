@@ -68,6 +68,12 @@ fun saveOnboardingComplete(context: Context) {
  * buttons - the "optional" wording plus each row's own status label already
  * make clear nothing here is required.
  *
+ * #90 - Handheld never has anything to show in the Storage access card at
+ * all (no cover-art permission after this issue, never had All Files
+ * Access), so it collapses to a single "Your folders" column there instead
+ * of showing a card with a permanent "nothing needed" placeholder - Touch
+ * keeps both columns.
+ *
  * Focus order for gamepad/D-pad navigation (Handheld is gamepad-first)
  * relies on Compose's built-in 2D directional focus search rather than
  * manual FocusRequesters, unlike GameCarousel's HorizontalPager - this is a
@@ -80,9 +86,6 @@ fun saveOnboardingComplete(context: Context) {
  */
 @Composable
 fun OnboardingScreen(
-    mediaImagesRequired: Boolean,
-    mediaImagesGranted: Boolean,
-    onRequestMediaImages: () -> Unit,
     allFilesAccessRequired: Boolean,
     allFilesAccessGranted: Boolean,
     onRequestAllFilesAccess: () -> Unit,
@@ -92,57 +95,54 @@ fun OnboardingScreen(
     onChooseMediaFolder: () -> Unit,
     onContinue: () -> Unit,
 ) {
+    // #90 - trimmed from the original sizing (72dp logo, 24dp outer padding,
+    // 24dp before the cards) after the side-by-side folder layout still
+    // clipped its buttons on the Retroid's ~480dp-tall landscape screen -
+    // the header was eating too much of that budget on its own. Every
+    // number below was picked to keep both folder columns' full content
+    // (title/description/status/button) visible with no scrolling on that
+    // screen specifically, so don't casually resize the header back up
+    // without re-checking there.
     Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
+        modifier = Modifier.fillMaxSize().padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Image(
             painter = painterResource(id = R.drawable.hypdroid_logo),
             contentDescription = "Hypdroid",
-            modifier = Modifier.height(72.dp),
+            modifier = Modifier.height(44.dp),
         )
-        Spacer(modifier = Modifier.height(16.dp))
-        Text("Welcome to Hypdroid", style = MaterialTheme.typography.headlineSmall)
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(6.dp))
+        // #90 - no separate "Welcome to Hypdroid" heading - the logo is
+        // already the wordmark, a second text repeat of the same name was
+        // redundant and just cost vertical room the folder card needed more.
         Text(
             "Choose where your games and artwork live. Everything can be changed later in Settings.",
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodySmall,
             textAlign = TextAlign.Center,
         )
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         Row(
             modifier = Modifier.weight(1f).fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            OutlinedCard(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                // #88 - OutlinedCard clips content to its own bounds, and on
-                // a short landscape screen (confirmed on a real Retroid
-                // Pocket 5 - roughly 480dp of logical height in landscape,
-                // far shorter than a tablet) the card's available height can
-                // be less than this content's natural height. Without
-                // scrolling, that silently clipped the second permission
-                // row off-screen entirely rather than showing it - verticalScroll
-                // makes it reachable instead of lost.
-                Column(
-                    modifier = Modifier.padding(16.dp).verticalScroll(rememberScrollState()),
-                ) {
-                    Text("Storage access", style = MaterialTheme.typography.titleMedium)
-                    Spacer(modifier = Modifier.height(12.dp))
+            if (allFilesAccessRequired) {
+                OutlinedCard(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                    // #88 - OutlinedCard clips content to its own bounds, and
+                    // on a short landscape screen (confirmed on a real
+                    // Retroid Pocket 5 - roughly 480dp of logical height in
+                    // landscape, far shorter than a tablet) the card's
+                    // available height can be less than this content's
+                    // natural height. verticalScroll keeps overflow reachable
+                    // instead of silently clipped off.
+                    Column(
+                        modifier = Modifier.padding(12.dp).verticalScroll(rememberScrollState()),
+                    ) {
+                        Text("Storage access", style = MaterialTheme.typography.titleMedium)
+                        Spacer(modifier = Modifier.height(8.dp))
 
-                    if (mediaImagesRequired) {
-                        OnboardingPermissionRow(
-                            description = "Allow Hypdroid to display artwork stored on your device.",
-                            granted = mediaImagesGranted,
-                            grantedLabel = "Allowed",
-                            actionLabel = "Allow artwork",
-                            onAction = onRequestMediaImages,
-                        )
-                    }
-
-                    if (allFilesAccessRequired) {
-                        if (mediaImagesRequired) Spacer(modifier = Modifier.height(16.dp))
                         OnboardingPermissionRow(
                             description = "Hypdroid Touch needs access to launch games stored outside the app.",
                             granted = allFilesAccessGranted,
@@ -155,46 +155,52 @@ fun OnboardingScreen(
                             onAction = onRequestAllFilesAccess,
                         )
                     }
-
-                    if (!mediaImagesRequired && !allFilesAccessRequired) {
-                        Text(
-                            "Nothing needed here on this device.",
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    }
                 }
             }
 
             OutlinedCard(modifier = Modifier.weight(1f).fillMaxHeight()) {
                 Column(
-                    modifier = Modifier.padding(16.dp).verticalScroll(rememberScrollState()),
+                    modifier = Modifier.padding(12.dp).verticalScroll(rememberScrollState()),
                 ) {
                     Text("Your folders", style = MaterialTheme.typography.titleMedium)
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
-                    OnboardingFolderRow(
-                        title = "Game folder",
-                        description = "Contains your roms, vldp, and singe folders.",
-                        path = gameFolderPath,
-                        onChoose = onChooseGameFolder,
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    OnboardingFolderRow(
-                        title = "Media folder",
-                        description = "Contains box, disc, logo, and background artwork.",
-                        path = mediaFolderPath,
-                        onChoose = onChooseMediaFolder,
-                    )
+                    // #90 - side by side, not stacked. Stacking two rows
+                    // needed more vertical room than a short landscape
+                    // screen has (the Retroid) and depended on a scroll
+                    // gesture the user has no reason to expect on a screen
+                    // that looks fully rendered already - confirmed
+                    // confusing on real hardware. Side by side fits both
+                    // without scrolling on every device tested so far.
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        OnboardingFolderColumn(
+                            modifier = Modifier.weight(1f),
+                            title = "Game folder",
+                            description = "Contains your roms, vldp, and singe folders.",
+                            path = gameFolderPath,
+                            onChoose = onChooseGameFolder,
+                        )
+                        OnboardingFolderColumn(
+                            modifier = Modifier.weight(1f),
+                            title = "Media folder",
+                            description = "Contains box, disc, logo, and background artwork.",
+                            path = mediaFolderPath,
+                            onChoose = onChooseMediaFolder,
+                        )
+                    }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(8.dp))
         Text(
             "Folders and permissions are optional during setup.",
             style = MaterialTheme.typography.bodySmall,
         )
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(6.dp))
         Button(
             onClick = onContinue,
             colors = ButtonDefaults.buttonColors(containerColor = HypdroidGreenDark),
@@ -244,29 +250,30 @@ internal fun OnboardingPermissionRow(
     }
 }
 
+// #90 - compact vertical layout (title/description/status/button all
+// stacked, no side-by-side text+button row) so two of these fit next to
+// each other width-wise instead of one full-width row per folder -
+// deliberately short, since it has to fit within a card's fixed height on
+// screens as short as the Retroid's landscape display.
 @Composable
-private fun OnboardingFolderRow(
+private fun OnboardingFolderColumn(
+    modifier: Modifier = Modifier,
     title: String,
     description: String,
     path: String?,
     onChoose: () -> Unit,
 ) {
-    Column {
+    Column(modifier = modifier) {
         Text(title, style = MaterialTheme.typography.titleSmall)
         Text(description, style = MaterialTheme.typography.bodySmall)
         Spacer(modifier = Modifier.height(4.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                path ?: "Not selected",
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.weight(1f),
-            )
-            OutlinedButton(
-                onClick = onChoose,
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = HypdroidGreenLight),
-            ) {
-                Text("Choose folder")
-            }
+        Text(path ?: "Not selected", style = MaterialTheme.typography.bodyMedium)
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedButton(
+            onClick = onChoose,
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = HypdroidGreenLight),
+        ) {
+            Text("Choose folder")
         }
     }
 }
