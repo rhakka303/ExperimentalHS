@@ -18,6 +18,40 @@ A standalone Android port of [Hypseus Singe](https://github.com/DirtBagXon/hypse
 
 This repo does **not** contain, bundle, or distribute any ROMs, laserdisc video dumps, or artwork. You provide your own game files; the app points at wherever you keep them.
 
+## Folder Structure
+
+Game folder (recommended folder name: hypseus)
+Media folder (recommended folder name: media)
+
+**Folders you create:**
+
+```
+hypseus/
+├── roms/     ← Daphne-native ROM(s)
+├── vldp/     ← Daphne-native framefile folder(s)
+└── singe/    ← fan-made games
+
+media/
+├── box/      ← 2D or 3D box art
+├── cd/       ← CD/laserdisc art
+├── logo/     ← Game logo art
+└── bg/       ← background art, must match your device's own resolution
+```
+
+**Folders Hypseus creates at first launch:**
+
+```
+hypseus/
+├── bezels/     ← your game bezels here
+├── fonts/
+├── logs/       ← hypseus.log (game logs)
+├── midi/
+├── ram/
+└── screenshots/
+```
+
+Side Note: All artwork requires PNG format
+
 ## Status / roadmap
 
 Core emulation, game scanning/launching, the visual gallery, Settings, and controls (gamepad + touch) are all working and tested on real hardware across both flavors. Ongoing work is polish, UX gaps, and further real-device testing.
