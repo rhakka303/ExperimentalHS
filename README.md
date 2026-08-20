@@ -3,6 +3,7 @@
 A standalone Android port of [Hypseus Singe](https://github.com/DirtBagXon/hypseus-singe), the laserdisc arcade emulator for fan-made Singe/Lua games, built directly from upstream source with a native game launcher UI.
 
 **Two flavors, two targets:**
+
 - **Hypdroid Handheld** — gamepad-first, for Android gaming handhelds and SBCs. Storage access via Storage Access Framework only, no broad file permissions.
 - **Hypdroid Touch** — for stock/OEM Android tablets and phones, with an on-screen touch control overlay alongside gamepad support.
 

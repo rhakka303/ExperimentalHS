@@ -46,6 +46,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -68,10 +69,13 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import coil.compose.AsyncImage
 import java.io.File
 import kotlin.math.absoluteValue
@@ -166,6 +170,17 @@ private fun resolveRealPath(treeUri: Uri): String? {
     return if (file.exists() && file.isDirectory) path else null
 }
 
+// #76/#88 - READ_MEDIA_IMAGES only exists as a runtime-requestable
+// permission on API 33+; below that it's a no-op that can't affect devices
+// like the Retroid Pocket 5 where raw-path reads already work, so this
+// reports "granted" there rather than a permission that doesn't apply.
+private fun isMediaImagesGranted(context: Context): Boolean {
+    return Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.READ_MEDIA_IMAGES,
+    ) == PackageManager.PERMISSION_GRANTED
+}
+
 // A sealed class rather than a plain enum since #31's per-game options
 // screen needs to carry which game it's scoped to.
 private sealed class Screen {
@@ -252,6 +267,10 @@ private fun HypdroidApp(context: MainActivity) {
     var touchControlsEnabled by remember { mutableStateOf(loadTouchControlsEnabled(context)) }
     var touchControlsStickMode by remember { mutableStateOf(loadTouchControlsStickMode(context)) }
     var touchControlsOpacity by remember { mutableStateOf(loadTouchControlsOpacity(context)) }
+    // #88 - unset on both a genuinely fresh install and an existing install
+    // upgrading to this feature (the flag simply doesn't exist yet either
+    // way), so both cases correctly see onboarding once.
+    var onboardingComplete by remember { mutableStateOf(loadOnboardingComplete(context)) }
 
     LaunchedEffect(games) {
         gameOptionsMap = games.associate { it.name to loadGameOptions(context, it.name) }
@@ -292,32 +311,48 @@ private fun HypdroidApp(context: MainActivity) {
         }
     }
 
+    // #88 - both permissions below used to be requested automatically on
+    // every launch (a runtime popup for cover art, a full Settings-screen
+    // redirect for All Files Access) with zero in-app explanation first -
+    // the All Files Access one in particular was confirmed confusing.
+    // Both are now explicit actions from OnboardingScreen (first run) or
+    // the recovery rows on Manage Game Folder / Manage Media Folder
+    // (afterward) instead of firing unprompted. State here just tracks
+    // current status so those screens can render it and know when to swap
+    // an action button for a "granted" label.
+    var mediaImagesGranted by remember { mutableStateOf(isMediaImagesGranted(context)) }
+    var allFilesAccessGranted by remember { mutableStateOf(isAllFilesAccessGranted(context)) }
+
     // #76 - Android 13+ blocks raw-path reads of image files (cover art)
     // even inside an SAF-granted folder, on at least some devices/OEMs.
     // READ_MEDIA_IMAGES only exists as a runtime-requestable permission on
-    // API 33+; requesting it below that is a no-op that can't affect
-    // devices like the Retroid Pocket 5 where this already works.
+    // API 33+; below that this launcher is simply never invoked.
     val requestMediaImagesPermission = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
-    ) { /* no-op - GameCard/Coil just retries loading on next recomposition either way */ }
-    LaunchedEffect(Unit) {
-        if (Build.VERSION.SDK_INT >= 33) {
-            val alreadyGranted = ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.READ_MEDIA_IMAGES,
-            ) == PackageManager.PERMISSION_GRANTED
-            if (!alreadyGranted) {
-                requestMediaImagesPermission.launch(Manifest.permission.READ_MEDIA_IMAGES)
+    ) { granted -> mediaImagesGranted = granted }
+
+    // All Files Access has no runtime popup on API 30+ - the only path is
+    // this Settings-screen redirect (see StorageAccessFlavor.kt), so there's
+    // no direct result callback the way there is above. Re-checked below
+    // instead, on resume.
+    val onRequestAllFilesAccess = { requestAllFilesAccessIfNeeded(context) }
+
+    // Neither permission above has a reliable single "just granted" signal
+    // on its own (the All Files Access redirect returns to onResume with no
+    // result at all; even the runtime popup's callback can be bypassed by
+    // backgrounding the app and granting from Android's own Settings
+    // instead) - re-checking both whenever this Activity resumes covers
+    // every path a user could take back to the app.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                mediaImagesGranted = isMediaImagesGranted(context)
+                allFilesAccessGranted = isAllFilesAccessGranted(context)
             }
         }
-    }
-
-    // Calls into whichever flavor's own StorageAccessFlavor.kt is actually
-    // compiled in - Handheld's version does nothing at all (no behavior
-    // change), Touch's version requests All Files Access. See both
-    // flavors' own copies of that file for the real logic.
-    LaunchedEffect(Unit) {
-        requestAllFilesAccessIfNeeded(context)
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     // Re-resolve previously-picked folders on every fresh launch, so the
@@ -374,6 +409,26 @@ private fun HypdroidApp(context: MainActivity) {
         )
         savePersistedFolderUri(context, PREF_MEDIA_FOLDER_URI, uri)
         applyMediaFolder(uri)
+    }
+
+    if (!onboardingComplete) {
+        OnboardingScreen(
+            mediaImagesRequired = Build.VERSION.SDK_INT >= 33,
+            mediaImagesGranted = mediaImagesGranted,
+            onRequestMediaImages = { requestMediaImagesPermission.launch(Manifest.permission.READ_MEDIA_IMAGES) },
+            allFilesAccessRequired = isAllFilesAccessSupported(),
+            allFilesAccessGranted = allFilesAccessGranted,
+            onRequestAllFilesAccess = onRequestAllFilesAccess,
+            gameFolderPath = gameFolderPath,
+            onChooseGameFolder = onChooseGameFolder,
+            mediaFolderPath = mediaFolderPath,
+            onChooseMediaFolder = { pickMediaFolder.launch(null) },
+            onContinue = {
+                saveOnboardingComplete(context)
+                onboardingComplete = true
+            },
+        )
+        return
     }
 
     when (val screen = currentScreen) {
@@ -442,6 +497,22 @@ private fun HypdroidApp(context: MainActivity) {
                 "- singe - fan-made games\n\n" +
                 "Unzipped Game Requirements:\n" +
                 "- Framework - required in singe folder",
+            // #88 - recovery path for onboarding's All Files Access row
+            // (Touch only) - null on Handheld, which has no such concept.
+            permissionRow = if (isAllFilesAccessSupported()) {
+                {
+                    OnboardingPermissionRow(
+                        description = "Hypdroid Touch needs access to launch games stored outside the app.",
+                        granted = allFilesAccessGranted,
+                        grantedLabel = "Access granted",
+                        actionLabel = "Open Android settings",
+                        helperText = "Turn on access for Hypdroid, then return here.",
+                        onAction = onRequestAllFilesAccess,
+                    )
+                }
+            } else {
+                null
+            },
             onChange = onChooseGameFolder,
             onBack = { currentScreen = Screen.Settings },
         )
@@ -465,6 +536,22 @@ private fun HypdroidApp(context: MainActivity) {
                 "- logo - logo art\n" +
                 "- bg - Background art, same resolution as your device\n\n" +
                 "Required format: PNG",
+            // #88 - recovery path for onboarding's cover-art permission row.
+            // Null below API 33, same gating as onboarding itself - the
+            // permission doesn't exist as a concept on older devices.
+            permissionRow = if (Build.VERSION.SDK_INT >= 33) {
+                {
+                    OnboardingPermissionRow(
+                        description = "Allow Hypdroid to display artwork stored on your device.",
+                        granted = mediaImagesGranted,
+                        grantedLabel = "Allowed",
+                        actionLabel = "Allow artwork",
+                        onAction = { requestMediaImagesPermission.launch(Manifest.permission.READ_MEDIA_IMAGES) },
+                    )
+                }
+            } else {
+                null
+            },
             onChange = { pickMediaFolder.launch(null) },
             onBack = { currentScreen = Screen.Settings },
         )

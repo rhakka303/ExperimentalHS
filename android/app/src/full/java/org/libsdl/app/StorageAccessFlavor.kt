@@ -26,3 +26,11 @@ fun requestAllFilesAccessIfNeeded(context: Context) {
         context.startActivity(intent)
     }
 }
+
+// #88 - this flavor uses the permission concept at all, regardless of
+// current grant state. Onboarding/recovery UI uses this to decide whether
+// to show the row in the first place.
+fun isAllFilesAccessSupported(): Boolean = true
+
+fun isAllFilesAccessGranted(context: Context): Boolean =
+    Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()

@@ -127,6 +127,14 @@ fun FolderManageScreen(
     title: String,
     path: String?,
     instructions: String? = null,
+    // #88 - recovery path for onboarding's own permission rows: a skipped
+    // or denied permission needs somewhere to be granted later, and the
+    // owner/ChatGPT design review landed on surfacing it next to the folder
+    // feature it actually gates, rather than a whole new Settings category.
+    // Null on whichever screen/flavor doesn't need one (e.g. always null on
+    // Handheld's Manage Game Folder, since it has no All Files Access
+    // concept at all).
+    permissionRow: (@Composable () -> Unit)? = null,
     onChange: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -149,6 +157,11 @@ fun FolderManageScreen(
                 Text(path ?: "Not set", style = MaterialTheme.typography.bodyMedium)
             }
             Button(onClick = onChange) { Text("Change") }
+        }
+
+        if (permissionRow != null) {
+            Spacer(modifier = Modifier.height(24.dp))
+            permissionRow()
         }
 
         if (instructions != null) {
