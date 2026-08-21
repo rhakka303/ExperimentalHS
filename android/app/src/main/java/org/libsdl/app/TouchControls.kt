@@ -232,9 +232,16 @@ class TouchOverlay(private val activity: Activity) {
         eventScope.launch { facePad.events().collect { handleEvent(it, stickMode) } }
 
         // Shoulder buttons - separated entirely from the D-pad/face-button
-        // pads and pinned to the top corners, big rectangular targets.
-        val shoulderWidthPx = (120 * density).toInt()
-        val shoulderHeightPx = (64 * density).toInt()
+        // pads and pinned to the top corners, big rectangular targets. #97 -
+        // sized off the shorter screen dimension, same basis as mainPadSizePx
+        // above, instead of a fixed dp constant that stayed the same physical
+        // size regardless of device. Fractions chosen to match the previous
+        // 120dp x 64dp constants' actual rendered size on the Samsung Tab
+        // S7+ (340dpi, 1752px shorter dimension) - the real device this was
+        // already tuned/verified against - so this is a like-for-like swap
+        // in sizing basis, not a visual redesign.
+        val shoulderWidthPx = (0.145f * min(metrics.widthPixels, metrics.heightPixels)).toInt()
+        val shoulderHeightPx = (0.078f * min(metrics.widthPixels, metrics.heightPixels)).toInt()
         val l1 = plainButton("L1", opacityAlpha, touchButtonBumperLeft)
         val l2 = plainButton("L2", opacityAlpha, touchButtonTriggerLeft)
         val r1 = plainButton("R1", opacityAlpha, touchButtonBumperRight)
