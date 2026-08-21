@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="144dp"
+    android:height="112dp"
+    android:viewportWidth="144"
+    android:viewportHeight="112">
+    <!-- Exact horizontal mirror of hypdroid_touch_trigger_left_b. -->
+    <group
+        android:scaleX="-1"
+        android:translateX="144">
+        <path
+            android:fillColor="#E20A101B"
+            android:pathData="M18,8 L128,8 C136,8 140,14 137,22 L111,96 C109,103 104,106 96,106 L44,106 C37,106 32,102 30,95 L7,22 C4,14 9,8 18,8 Z"
+            android:strokeColor="#D6E5F6"
+            android:strokeWidth="2.2" />
+        <path
+            android:fillColor="#C9111B2B"
+            android:pathData="M23,17 L123,17 C128,17 130,21 128,26 L105,88 C104,93 100,96 95,96 L48,96 C43,96 40,93 38,88 L16,26 C14,21 17,17 23,17 Z"
+            android:strokeColor="#708AA8"
+            android:strokeWidth="1.6" />
+        <path
+            android:fillColor="#491B2A3C"
+            android:pathData="M29,25 L116,25 C120,25 122,28 120,32 L100,81 C99,85 96,87 92,87 L53,87 C49,87 46,85 45,81 L27,32 C25,28 26,25 29,25 Z"
+            android:strokeColor="#435A75"
+            android:strokeWidth="1.1" />
+        <path
+            android:fillColor="#00000000"
+            android:pathData="M15,20 L126,20"
+            android:strokeColor="#BCE4F1FF"
+            android:strokeLineCap="round"
+            android:strokeWidth="1.4" />
+        <path
+            android:fillColor="#00000000"
+            android:pathData="M38,91 C53,98 82,100 104,91"
+            android:strokeColor="#20D477"
+            android:strokeLineCap="round"
+            android:strokeWidth="3.8" />
+        <path
+            android:fillColor="#00000000"
+            android:pathData="M41,91 C56,96 81,98 101,91"
+            android:strokeColor="#7AF4AF"
+            android:strokeLineCap="round"
+            android:strokeWidth="1.2" />
+    </group>
+</vector>

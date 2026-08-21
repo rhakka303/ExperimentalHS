@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="180dp"
+    android:height="72dp"
+    android:viewportWidth="180"
+    android:viewportHeight="72">
+    <!-- Shared Set B capsule for SELECT and START. -->
+    <path
+        android:fillColor="#E20A101B"
+        android:pathData="M36,4 L144,4 C163,4 176,17 176,36 C176,55 163,68 144,68 L36,68 C17,68 4,55 4,36 C4,17 17,4 36,4 Z"
+        android:strokeColor="#D6E5F6"
+        android:strokeWidth="2.2" />
+    <path
+        android:fillColor="#C9111B2B"
+        android:pathData="M37,12 L143,12 C158,12 168,22 168,36 C168,50 158,60 143,60 L37,60 C22,60 12,50 12,36 C12,22 22,12 37,12 Z"
+        android:strokeColor="#708AA8"
+        android:strokeWidth="1.6" />
+    <path
+        android:fillColor="#491B2A3C"
+        android:pathData="M39,20 L141,20 C152,20 160,27 160,36 C160,45 152,52 141,52 L39,52 C28,52 20,45 20,36 C20,27 28,20 39,20 Z"
+        android:strokeColor="#435A75"
+        android:strokeWidth="1.1" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M36,8 L144,8 C158,8 168,17 171,29"
+        android:strokeColor="#BCE4F1FF"
+        android:strokeLineCap="round"
+        android:strokeWidth="1.4" />
+    <path
+        android:fillColor="#20D477"
+        android:pathData="M79,62 C79,59 82,57 85,57 L95,57 C98,57 101,59 101,62 C101,65 98,66 95,66 L85,66 C82,66 79,65 79,62 Z" />
+    <path
+        android:fillColor="#7AF4AF"
+        android:pathData="M84,59 L96,59 C98,59 99,60 99,61 C99,62 98,63 96,63 L84,63 C82,63 81,62 81,61 C81,60 82,59 84,59 Z" />
+</vector>

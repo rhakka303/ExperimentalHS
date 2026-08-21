@@ -3,6 +3,9 @@ package org.libsdl.app
 import android.app.Activity
 import android.content.Context
 import android.graphics.Color
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffColorFilter
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -11,6 +14,8 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.RelativeLayout
+import androidx.compose.ui.graphics.toArgb
+import androidx.core.content.ContextCompat
 import com.swordfish.radialgamepad.library.RadialGamePad
 import com.swordfish.radialgamepad.library.config.ButtonConfig
 import com.swordfish.radialgamepad.library.config.CrossConfig
@@ -230,10 +235,10 @@ class TouchOverlay(private val activity: Activity) {
         // pads and pinned to the top corners, big rectangular targets.
         val shoulderWidthPx = (120 * density).toInt()
         val shoulderHeightPx = (64 * density).toInt()
-        val l1 = plainButton("L1", opacityAlpha)
-        val l2 = plainButton("L2", opacityAlpha)
-        val r1 = plainButton("R1", opacityAlpha)
-        val r2 = plainButton("R2", opacityAlpha)
+        val l1 = plainButton("L1", opacityAlpha, touchButtonBumperLeft)
+        val l2 = plainButton("L2", opacityAlpha, touchButtonTriggerLeft)
+        val r1 = plainButton("R1", opacityAlpha, touchButtonBumperRight)
+        val r2 = plainButton("R2", opacityAlpha, touchButtonTriggerRight)
 
         addView(
             layout, l1, shoulderWidthPx, shoulderHeightPx,
@@ -270,10 +275,10 @@ class TouchOverlay(private val activity: Activity) {
         // the physical Retroid), which touch otherwise has no way to reach.
         val centerRow = LinearLayout(activity).apply { orientation = LinearLayout.HORIZONTAL }
         val stickButtonSizePx = shoulderHeightPx
-        val l3 = plainCircleButton("L3", opacityAlpha)
-        val select = plainButton("SELECT", opacityAlpha)
-        val start = plainButton("START", opacityAlpha)
-        val r3 = plainCircleButton("R3", opacityAlpha)
+        val l3 = plainCircleButton("L3", opacityAlpha, touchButtonStickCap)
+        val select = plainButton("SELECT", opacityAlpha, touchButtonPill)
+        val start = plainButton("START", opacityAlpha, touchButtonPill)
+        val r3 = plainCircleButton("R3", opacityAlpha, touchButtonStickCap)
         centerRow.addView(l3, LinearLayout.LayoutParams(stickButtonSizePx, stickButtonSizePx))
         centerRow.addView(
             select,
@@ -324,22 +329,32 @@ class TouchOverlay(private val activity: Activity) {
         SDLControllerManager.nativeRemoveJoystick(deviceId)
     }
 
-    private fun plainCircleButton(label: String, alpha: Int): Button {
+    // #98 - assetRes comes from TouchButtonAssetsFlavor.kt, which is
+    // per-flavor source-set-scoped (like StorageAccessFlavor.kt): real
+    // R.drawable ids on Touch, all null on Handheld. A real compile-time
+    // reference on the flavor that has the resource, no lookup needed.
+    private fun themedDrawable(assetRes: Int?): Drawable? {
+        return assetRes?.let { ContextCompat.getDrawable(activity, it) }
+    }
+
+    private fun plainCircleButton(label: String, alpha: Int, assetRes: Int? = null): Button {
         return Button(activity).apply {
             text = label
             textSize = 16f
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(Color.argb(alpha, 40, 40, 40))
-            }
+            background = themedDrawable(assetRes)?.apply { mutate().alpha = alpha }
+                ?: GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(Color.argb(alpha, 40, 40, 40))
+                }
             setTextColor(Color.argb(alpha, 255, 255, 255))
         }
     }
 
-    private fun plainButton(label: String, alpha: Int): Button {
+    private fun plainButton(label: String, alpha: Int, assetRes: Int? = null): Button {
         return Button(activity).apply {
             text = label
-            setBackgroundColor(Color.argb(alpha, 40, 40, 40))
+            background = themedDrawable(assetRes)?.apply { mutate().alpha = alpha }
+                ?: GradientDrawable().apply { setColor(Color.argb(alpha, 40, 40, 40)) }
             setTextColor(Color.argb(alpha, 255, 255, 255))
         }
     }
@@ -349,10 +364,11 @@ class TouchOverlay(private val activity: Activity) {
         // just with the alpha channel driven by the owner's opacity slider
         // instead of the library's fixed values. pressedColor stays fully
         // solid always, so touch feedback stays clear even at low resting
-        // visibility.
+        // visibility - now the app's own green accent, matching the #98
+        // static-button press tint instead of RadialGamePad's default gray.
         return RadialGamePadTheme(
             normalColor = Color.argb(alpha, 125, 125, 125),
-            pressedColor = Color.argb(255, 125, 125, 125),
+            pressedColor = HypdroidGreenAccent.toArgb(),
             simulatedColor = Color.argb(alpha, 125, 125, 125),
             textColor = Color.argb(alpha, 255, 255, 255),
             backgroundColor = Color.argb((alpha * 50 / 125), 125, 125, 125),
@@ -360,14 +376,21 @@ class TouchOverlay(private val activity: Activity) {
         )
     }
 
+    // #98 - same press-feedback mechanism RadialGamePad itself uses
+    // (PrimaryButtonsDial.kt swaps in theme.pressedColor while held) - a
+    // plain color tint over the button's own drawable, not a shape change.
+    private val pressedTint = PorterDuffColorFilter(HypdroidGreenAccent.toArgb(), PorterDuff.Mode.SRC_ATOP)
+
     private fun bindPlainButton(button: Button, keycode: Int) {
         button.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
+                    button.background?.colorFilter = pressedTint
                     handleButtonPress(keycode, pressed = true)
                     true
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    button.background?.colorFilter = null
                     handleButtonPress(keycode, pressed = false)
                     true
                 }
