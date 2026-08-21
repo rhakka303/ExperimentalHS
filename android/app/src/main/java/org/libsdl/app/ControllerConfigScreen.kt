@@ -3,23 +3,30 @@ package org.libsdl.app
 import android.view.KeyEvent
 import android.view.MotionEvent
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -31,7 +38,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import java.io.File
 
 private const val AXIS_THRESHOLD = 0.5f
@@ -174,6 +185,26 @@ fun ControllerConfigScreen(
 
     var listening by remember { mutableStateOf<Pair<String, BindingSlot>?>(null) }
     var conflict by remember { mutableStateOf<ConflictState?>(null) }
+    // #84 - a touch-only user has no physical controller to press, so the
+    // existing "listening" capture flow above never resolves for them.
+    // pickerFor tracks which row/slot has its list picker open - a fully
+    // separate action from listening, wired to the exact same
+    // conflict-check/apply pipeline via resolveToken() below so a token
+    // chosen from the list is validated identically to one captured from a
+    // real press. Never touches `listening` or gamepadCaptureListener, so
+    // Handheld's existing press-to-capture flow is unaffected either way.
+    var pickerFor by remember { mutableStateOf<Pair<String, BindingSlot>?>(null) }
+
+    fun resolveToken(keyName: String, slot: BindingSlot, token: String) {
+        val currentRows = rows ?: return
+        val conflictingKey = findConflict(currentRows, keyName, slot, token)
+        if (conflictingKey != null) {
+            conflict = ConflictState(keyName, slot, token, conflictingKey)
+        } else {
+            applyBinding(gameFolderPath, keyName, slot, token)
+            rows = withBinding(currentRows, keyName, slot, token)
+        }
+    }
 
     DisposableEffect(listening) {
         val current = listening
@@ -182,15 +213,8 @@ fun ControllerConfigScreen(
         } else {
             val (keyName, slot) = current
             activity.gamepadCaptureListeningForAxis = (slot == BindingSlot.AXIS_PAD0)
-            activity.gamepadCaptureListener = capture@{ token ->
-                val currentRows = rows ?: return@capture
-                val conflictingKey = findConflict(currentRows, keyName, slot, token)
-                if (conflictingKey != null) {
-                    conflict = ConflictState(keyName, slot, token, conflictingKey)
-                } else {
-                    applyBinding(gameFolderPath, keyName, slot, token)
-                    rows = withBinding(currentRows, keyName, slot, token)
-                }
+            activity.gamepadCaptureListener = { token ->
+                resolveToken(keyName, slot, token)
                 listening = null
             }
         }
@@ -222,11 +246,32 @@ fun ControllerConfigScreen(
                         isListeningAxis = listening == (row.keyName to BindingSlot.AXIS_PAD0),
                         onTapButton = { listening = row.keyName to BindingSlot.PAD0_BUTTON },
                         onTapAxis = { listening = row.keyName to BindingSlot.AXIS_PAD0 },
+                        onOpenButtonPicker = { pickerFor = row.keyName to BindingSlot.PAD0_BUTTON },
+                        onOpenAxisPicker = { pickerFor = row.keyName to BindingSlot.AXIS_PAD0 },
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                 }
             }
         }
+    }
+
+    pickerFor?.let { (keyName, slot) ->
+        val row = rows?.find { it.keyName == keyName }
+        val currentToken = when {
+            row == null -> null
+            slot == BindingSlot.PAD0_BUTTON -> row.pad0Button
+            else -> row.axisPad0
+        }
+        TokenPickerDialog(
+            title = "Choose a binding for $keyName",
+            tokens = if (slot == BindingSlot.PAD0_BUTTON) VALID_BUTTON_TOKENS else VALID_AXIS_TOKENS,
+            currentToken = currentToken,
+            onSelect = { token ->
+                resolveToken(keyName, slot, token)
+                pickerFor = null
+            },
+            onDismiss = { pickerFor = null },
+        )
     }
 
     conflict?.let { c ->
@@ -256,6 +301,29 @@ fun ControllerConfigScreen(
 // capture for an Axis slot there.
 private val DIRECTIONAL_KEYS = setOf("KEY_UP", "KEY_DOWN", "KEY_LEFT", "KEY_RIGHT")
 
+// #84 - Material3's default focus indication on a filled Button reads as
+// too subtle to actually see which row is highlighted while D-pad
+// navigating (confirmed on a real Retroid) - this is the button Handheld
+// actually navigates via D-pad (see ControllerRow), so an explicit,
+// clearly visible ring matters here specifically, not just as polish.
+@Composable
+private fun CaptureButton(onClick: () -> Unit, content: @Composable () -> Unit) {
+    var isFocused by remember { mutableStateOf(false) }
+    Button(
+        onClick = onClick,
+        modifier = Modifier
+            .onFocusChanged { isFocused = it.isFocused }
+            .then(
+                if (isFocused) {
+                    Modifier.border(3.dp, Color(0xFF4CAF50), ButtonDefaults.shape)
+                } else {
+                    Modifier
+                },
+            ),
+        content = { content() },
+    )
+}
+
 @Composable
 private fun ControllerRow(
     row: GamepadRow,
@@ -263,17 +331,41 @@ private fun ControllerRow(
     isListeningAxis: Boolean,
     onTapButton: () -> Unit,
     onTapAxis: () -> Unit,
+    onOpenButtonPicker: () -> Unit,
+    onOpenAxisPicker: () -> Unit,
 ) {
     Column {
         Text(row.keyName, style = MaterialTheme.typography.titleSmall)
         Spacer(modifier = Modifier.height(4.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(onClick = onTapButton) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            CaptureButton(onClick = onTapButton) {
                 Text(if (isListeningButton) "Press a button..." else "Button: ${displayToken(row.pad0Button)}")
             }
+            // #84 - a fully separate action from onTapButton above, never
+            // touching the press-to-capture flow - opens a list of the same
+            // token vocabulary so a touch-only user (no physical controller
+            // to press) can still assign a binding. Excluded from focus
+            // traversal (canFocus = false) - Handheld already has a fully
+            // working D-pad flow across just the capture buttons (confirmed
+            // on a real device: Up/Down highlights each one, A activates
+            // it), and IconButton is focusable by default, which would add
+            // these as extra D-pad stops nobody there needs - still tappable
+            // by touch either way, focusability doesn't gate that.
+            IconButton(
+                onClick = onOpenButtonPicker,
+                modifier = Modifier.focusProperties { canFocus = false },
+            ) {
+                Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Choose Button from a list")
+            }
             if (row.keyName in DIRECTIONAL_KEYS) {
-                Button(onClick = onTapAxis) {
+                CaptureButton(onClick = onTapAxis) {
                     Text(if (isListeningAxis) "Move a stick..." else "Axis: ${displayToken(row.axisPad0)}")
+                }
+                IconButton(
+                    onClick = onOpenAxisPicker,
+                    modifier = Modifier.focusProperties { canFocus = false },
+                ) {
+                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Choose Axis from a list")
                 }
             }
         }
@@ -281,3 +373,56 @@ private fun ControllerRow(
 }
 
 private fun displayToken(token: String): String = if (token == "0") "None" else token
+
+/**
+ * #84 - the list-based alternative to physical-press capture, for a
+ * touch-only user with no controller to press. Touch-only: no focus
+ * request or onKeyEvent handling here - an earlier version requested focus
+ * on the Column wrapping the LazyColumn to support D-pad navigation, but
+ * that fought the list's own manual scroll gestures and made it feel stuck
+ * (confirmed on a real device). Tapping a token applies it immediately and
+ * closes the dialog; the already-bound token is highlighted and scrolled
+ * into view up front so it's obvious what's currently set.
+ */
+@Composable
+private fun TokenPickerDialog(
+    title: String,
+    tokens: List<String>,
+    currentToken: String?,
+    onSelect: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val initialIndex = remember(currentToken) { tokens.indexOf(currentToken).coerceAtLeast(0) }
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialIndex)
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = MaterialTheme.shapes.medium) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(8.dp))
+                LazyColumn(state = listState, modifier = Modifier.heightIn(max = 400.dp)) {
+                    items(tokens) { token ->
+                        val isCurrent = token == currentToken
+                        TextButton(
+                            onClick = { onSelect(token) },
+                            colors = if (isCurrent) {
+                                ButtonDefaults.textButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                )
+                            } else {
+                                ButtonDefaults.textButtonColors()
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(token, modifier = Modifier.fillMaxWidth())
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+                    Text("Cancel")
+                }
+            }
+        }
+    }
+}
