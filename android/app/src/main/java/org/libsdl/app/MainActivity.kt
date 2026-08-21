@@ -125,7 +125,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme {
+            HypdroidTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     HypdroidApp(context = this)
                 }

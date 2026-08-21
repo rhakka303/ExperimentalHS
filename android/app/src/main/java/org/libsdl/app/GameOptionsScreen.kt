@@ -17,13 +17,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -97,7 +95,7 @@ fun GameOptionsScreen(
                         )
                     }
                     Spacer(modifier = Modifier.height(8.dp))
-                    Button(
+                    HypdroidButton(
                         onClick = { showCoverArtPicker = true },
                         enabled = !globalCoverArtEnabled,
                     ) { Text("Change") }
@@ -112,7 +110,7 @@ fun GameOptionsScreen(
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                    Switch(checked = options.bezelEnabled, onCheckedChange = onBezelToggle)
+                    HypdroidSwitch(checked = options.bezelEnabled, onCheckedChange = onBezelToggle)
                 }
             }
         }
@@ -132,7 +130,7 @@ fun GameOptionsScreen(
                         placeholder = { Text("-fastboot") },
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Button(onClick = {
+                    HypdroidButton(onClick = {
                         val trimmed = argumentText.trim()
                         if (trimmed.isNotEmpty()) {
                             onAddArgument(trimmed)

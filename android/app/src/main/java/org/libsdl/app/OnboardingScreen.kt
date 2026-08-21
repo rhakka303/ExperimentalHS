@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -201,9 +200,14 @@ fun OnboardingScreen(
             style = MaterialTheme.typography.bodySmall,
         )
         Spacer(modifier = Modifier.height(6.dp))
-        Button(
+        // #92 - now the app's one shared HypdroidButton (navy fill, green
+        // focus ring on D-pad highlight) rather than a one-off green fill -
+        // #88 originally made this the single deliberately-green button in
+        // the app specifically because everything else was Material3's
+        // untouched purple default; now that the whole app has a real,
+        // consistent navy identity, that reasoning no longer applies.
+        HypdroidButton(
             onClick = onContinue,
-            colors = ButtonDefaults.buttonColors(containerColor = HypdroidGreenDark),
             modifier = Modifier.align(Alignment.End),
         ) {
             Text("Continue")
