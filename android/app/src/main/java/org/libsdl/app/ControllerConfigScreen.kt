@@ -3,7 +3,6 @@ package org.libsdl.app
 import android.view.KeyEvent
 import android.view.MotionEvent
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,7 +20,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -39,8 +37,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusProperties
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import java.io.File
@@ -301,28 +297,13 @@ fun ControllerConfigScreen(
 // capture for an Axis slot there.
 private val DIRECTIONAL_KEYS = setOf("KEY_UP", "KEY_DOWN", "KEY_LEFT", "KEY_RIGHT")
 
-// #84 - Material3's default focus indication on a filled Button reads as
-// too subtle to actually see which row is highlighted while D-pad
-// navigating (confirmed on a real Retroid) - this is the button Handheld
-// actually navigates via D-pad (see ControllerRow), so an explicit,
-// clearly visible ring matters here specifically, not just as polish.
+// #84/#92 - the app-wide HypdroidButton (Theme.kt) now carries this same
+// focus ring for every filled button, not just this screen's own capture
+// buttons - kept as a thin alias here since ControllerRow already refers
+// to "CaptureButton" by name and there's no reason to churn that.
 @Composable
-private fun CaptureButton(onClick: () -> Unit, content: @Composable () -> Unit) {
-    var isFocused by remember { mutableStateOf(false) }
-    Button(
-        onClick = onClick,
-        modifier = Modifier
-            .onFocusChanged { isFocused = it.isFocused }
-            .then(
-                if (isFocused) {
-                    Modifier.border(3.dp, Color(0xFF4CAF50), ButtonDefaults.shape)
-                } else {
-                    Modifier
-                },
-            ),
-        content = { content() },
-    )
-}
+private fun CaptureButton(onClick: () -> Unit, content: @Composable () -> Unit) =
+    HypdroidButton(onClick = onClick, content = content)
 
 @Composable
 private fun ControllerRow(

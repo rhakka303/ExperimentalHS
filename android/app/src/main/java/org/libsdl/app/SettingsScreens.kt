@@ -25,13 +25,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
@@ -156,7 +154,7 @@ fun FolderManageScreen(
                 Text(title, style = MaterialTheme.typography.titleMedium)
                 Text(path ?: "Not set", style = MaterialTheme.typography.bodyMedium)
             }
-            Button(onClick = onChange) { Text("Change") }
+            HypdroidButton(onClick = onChange) { Text("Change") }
         }
 
         if (permissionRow != null) {
@@ -220,7 +218,7 @@ fun AppSettingsScreen(
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                         }
-                        Switch(checked = globalCoverArtEnabled, onCheckedChange = onGlobalCoverArtToggle)
+                        HypdroidSwitch(checked = globalCoverArtEnabled, onCheckedChange = onGlobalCoverArtToggle)
                     }
                     if (globalCoverArtEnabled) {
                         Spacer(modifier = Modifier.height(8.dp))
@@ -230,7 +228,7 @@ fun AppSettingsScreen(
                                 style = MaterialTheme.typography.bodyMedium,
                                 modifier = Modifier.weight(1f),
                             )
-                            Button(onClick = { showGlobalCoverArtPicker = true }) { Text("Change") }
+                            HypdroidButton(onClick = { showGlobalCoverArtPicker = true }) { Text("Change") }
                         }
                     }
                 }
@@ -246,7 +244,7 @@ fun AppSettingsScreen(
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                         }
-                        Switch(checked = backgroundArtEnabled, onCheckedChange = onBackgroundArtToggle)
+                        HypdroidSwitch(checked = backgroundArtEnabled, onCheckedChange = onBackgroundArtToggle)
                     }
                     // #66 - Default Art overrides every game's own bg art
                     // with bg/default.png, same override shape as Global
@@ -262,7 +260,7 @@ fun AppSettingsScreen(
                                     style = MaterialTheme.typography.bodyMedium,
                                 )
                             }
-                            Switch(checked = defaultArtEnabled, onCheckedChange = onDefaultArtToggle)
+                            HypdroidSwitch(checked = defaultArtEnabled, onCheckedChange = onDefaultArtToggle)
                         }
                     }
                 }
@@ -378,7 +376,7 @@ fun TouchControlsScreen(
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                         }
-                        Switch(checked = touchControlsEnabled, onCheckedChange = onTouchControlsToggle)
+                        HypdroidSwitch(checked = touchControlsEnabled, onCheckedChange = onTouchControlsToggle)
                     }
                     if (touchControlsEnabled) {
                         Spacer(modifier = Modifier.height(8.dp))
@@ -390,7 +388,7 @@ fun TouchControlsScreen(
                                     style = MaterialTheme.typography.bodyMedium,
                                 )
                             }
-                            Switch(checked = stickModeEnabled, onCheckedChange = onStickModeToggle)
+                            HypdroidSwitch(checked = stickModeEnabled, onCheckedChange = onStickModeToggle)
                         }
                     }
                 }
