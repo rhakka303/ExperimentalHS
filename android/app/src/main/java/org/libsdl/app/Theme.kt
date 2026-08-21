@@ -4,8 +4,11 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -100,6 +103,72 @@ fun HypdroidSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
                         .padding(2.dp)
                         .border(3.dp, HypdroidGreenAccent, RoundedCornerShape(percent = 50))
                         .padding(2.dp)
+                } else {
+                    Modifier
+                },
+            ),
+    )
+}
+
+/**
+ * #107 - same focus-ring treatment as HypdroidButton, for the app's two
+ * OutlinedButtons (Onboarding's permission/folder actions). Accepts a
+ * colors override since both call sites use a custom green content color
+ * on top of the outline - that's preserved, only the focus ring is added.
+ */
+@Composable
+fun HypdroidOutlinedButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    colors: ButtonColors = ButtonDefaults.outlinedButtonColors(),
+    content: @Composable () -> Unit,
+) {
+    var isFocused by remember { mutableStateOf(false) }
+    OutlinedButton(
+        onClick = onClick,
+        enabled = enabled,
+        colors = colors,
+        modifier = modifier
+            .onFocusChanged { isFocused = it.isFocused }
+            .then(
+                if (isFocused) {
+                    Modifier.border(3.dp, HypdroidGreenAccent, ButtonDefaults.shape)
+                } else {
+                    Modifier
+                },
+            ),
+        content = { content() },
+    )
+}
+
+/**
+ * #107 - same focus-ring treatment, for GameOptionsScreen's per-game launch
+ * args OutlinedTextField. The field remains the D-pad-focused element after
+ * the keyboard is dismissed, same as any other focusable control - the
+ * default Material3 focus indication (outline tinting to colorScheme.primary)
+ * is as subtle as Button's/Switch's default was, hence the same thick ring
+ * override rather than relying on it.
+ */
+@Composable
+fun HypdroidOutlinedTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    singleLine: Boolean = false,
+    placeholder: @Composable (() -> Unit)? = null,
+) {
+    var isFocused by remember { mutableStateOf(false) }
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        singleLine = singleLine,
+        placeholder = placeholder,
+        modifier = modifier
+            .onFocusChanged { isFocused = it.isFocused }
+            .then(
+                if (isFocused) {
+                    Modifier.border(3.dp, HypdroidGreenAccent, MaterialTheme.shapes.extraSmall)
                 } else {
                     Modifier
                 },
