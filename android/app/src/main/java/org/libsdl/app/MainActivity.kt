@@ -67,6 +67,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -74,6 +75,8 @@ import androidx.compose.ui.util.lerp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import coil.compose.AsyncImage
+import coil.imageLoader
+import coil.request.ImageRequest
 import java.io.File
 import kotlin.math.absoluteValue
 import kotlinx.coroutines.launch
@@ -626,19 +629,45 @@ private fun HomeScreen(
 ) {
     // #66 - resolved from whichever game is currently focused in the
     // carousel (carouselPage, kept in sync by GameCarousel's own
-    // snapshotFlow). Instant swap, not animated - the whole point of
-    // hoisting carouselPage up here already (#52) is that it updates
-    // synchronously with the pager, so this just re-resolves on every
-    // recomposition without any extra plumbing.
+    // snapshotFlow) - re-resolves on every recomposition without any extra
+    // plumbing. #95 gives the actual AsyncImage below a crossfade so this
+    // no longer reads as a hard cut when it changes.
     val focusedGame = games.getOrNull(carouselPage)
     val backgroundFile = focusedGame?.let {
         backgroundArtFile(mediaFolderPath, it.name, backgroundArtEnabled, defaultArtEnabled)
     }
 
+    // #95 - the carousel's own swipe animation and this background swap
+    // used to fight each other visually: HorizontalPager already animates
+    // the page transition, but the full-screen background behind it (and
+    // each neighboring page's own cover art, still off-screen at this
+    // point) hadn't even started loading until the swipe actually landed -
+    // a real Coil disk read, not free. Prefetching the immediate neighbors'
+    // art into Coil's cache as soon as carouselPage changes means it's
+    // usually already there by the time a swipe lands on it, rather than
+    // starting the load only then.
+    val context = LocalContext.current
+    LaunchedEffect(carouselPage, games, mediaFolderPath) {
+        for (index in listOf(carouselPage - 1, carouselPage + 1)) {
+            val neighbor = games.getOrNull(index) ?: continue
+            val coverArtOverride = if (globalCoverArtEnabled) {
+                globalCoverArtType
+            } else {
+                gameOptionsMap[neighbor.name]?.coverArt
+            }
+            resolveCoverArtFile(mediaFolderPath, neighbor.name, coverArtOverride)?.let { file ->
+                context.imageLoader.enqueue(ImageRequest.Builder(context).data(file).build())
+            }
+            backgroundArtFile(mediaFolderPath, neighbor.name, backgroundArtEnabled, defaultArtEnabled)?.let { file ->
+                context.imageLoader.enqueue(ImageRequest.Builder(context).data(file).build())
+            }
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         if (backgroundFile != null) {
             AsyncImage(
-                model = backgroundFile,
+                model = ImageRequest.Builder(context).data(backgroundFile).crossfade(300).build(),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
@@ -856,7 +885,10 @@ private fun GameCard(
     ) {
         if (coverArtFile != null) {
             AsyncImage(
-                model = coverArtFile,
+                // #95 - crossfade, and usually already warm from the
+                // neighbor-prefetch effect in HomeScreen by the time this
+                // page is actually reached.
+                model = ImageRequest.Builder(LocalContext.current).data(coverArtFile).crossfade(300).build(),
                 contentDescription = game.name,
                 // Fit, not Crop - the real box art PNGs include a
                 // transparent shadow margin around the rendered box, and
