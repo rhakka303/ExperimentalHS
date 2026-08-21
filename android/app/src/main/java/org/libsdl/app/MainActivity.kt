@@ -802,6 +802,17 @@ private fun GameCarousel(
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
 
+    // #105 - card width derived from screen width instead of a fixed
+    // 420.dp, same basis as #97's touch-button fix. The fraction
+    // (0.319) is reverse-engineered from 420dp against the Samsung Tab
+    // S7+'s actual screenWidthDp (~1317dp, the device this layout was
+    // originally tuned against) - a like-for-like swap in sizing basis,
+    // not a redesign, so Samsung's already-approved look stays the same.
+    // Confirmed on the Retroid (~853dp wide) that this leaves real room
+    // for three fully visible cards with real gaps, instead of one
+    // dominant card clipping its neighbors through the middle of their art.
+    val cardWidth = (LocalConfiguration.current.screenWidthDp * 0.319f).dp
+
     HorizontalPager(
         state = pagerState,
         // A fixed, modest page width (rather than the default full-width
@@ -809,8 +820,8 @@ private fun GameCarousel(
         // landscape screen - a full-width page left the narrow portrait
         // card pinned to the page's start edge with a huge empty gap
         // before the next page, instead of a tight, centered carousel.
-        pageSize = PageSize.Fixed(420.dp),
-        contentPadding = PaddingValues(horizontal = (LocalConfiguration.current.screenWidthDp.dp - 420.dp) / 2),
+        pageSize = PageSize.Fixed(cardWidth),
+        contentPadding = PaddingValues(horizontal = (LocalConfiguration.current.screenWidthDp.dp - cardWidth) / 2),
         pageSpacing = 16.dp,
         modifier = Modifier
             .fillMaxSize()
