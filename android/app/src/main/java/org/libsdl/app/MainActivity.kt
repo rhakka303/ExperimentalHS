@@ -57,7 +57,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -876,7 +878,9 @@ private fun GameCard(
                 scaleY = scale
             }
             .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
+            // Quick on-device test: transparent instead of surfaceVariant,
+            // so any remaining letterbox gap blends into the background
+            // art behind the carousel instead of showing a gray box.
             // #31 - long-press is touch's equivalent of pressing down on
             // the d-pad (see GameCarousel's onKeyEvent above) - opens this
             // game's options screen (Cover Art/Bezel/Arguments).
@@ -903,9 +907,31 @@ private fun GameCard(
             // was explicitly chosen, or no media folder set) - falls back
             // to a plain text card rather than an error/blank space,
             // matching the app's existing missing-content pattern.
+            //
+            // #101 - the card's background fill was removed, so this label
+            // sits directly over whatever background art is behind it
+            // instead of a neutral gray box. The default text color is
+            // black (MaterialTheme.colorScheme.onSurface, unthemed), which
+            // reads fine on light/no-background but disappears into dark or
+            // busy background art. First attempt used a BLACK shadow, which
+            // did nothing against a dark backdrop (black shadow behind
+            // black text has no contrast against black background - visually
+            // confirmed on-device, not just a theoretical miss). A WHITE
+            // glow (zero offset, wide blur - a halo, not a directional drop
+            // shadow) fixes both ends: it's a strong light ring around the
+            // dark text against dark/busy art, and a near-invisible no-op
+            // against light/white backgrounds where the black text already
+            // has full contrast on its own.
             Text(
                 game.name,
                 textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.titleLarge.copy(
+                    shadow = Shadow(
+                        color = Color.White,
+                        offset = Offset.Zero,
+                        blurRadius = 24f,
+                    ),
+                ),
                 modifier = Modifier.padding(16.dp),
             )
         }
