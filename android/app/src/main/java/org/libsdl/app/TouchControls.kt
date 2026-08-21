@@ -242,10 +242,10 @@ class TouchOverlay(private val activity: Activity) {
         // in sizing basis, not a visual redesign.
         val shoulderWidthPx = (0.145f * min(metrics.widthPixels, metrics.heightPixels)).toInt()
         val shoulderHeightPx = (0.078f * min(metrics.widthPixels, metrics.heightPixels)).toInt()
-        val l1 = plainButton("L1", opacityAlpha, touchButtonBumperLeft)
-        val l2 = plainButton("L2", opacityAlpha, touchButtonTriggerLeft)
-        val r1 = plainButton("R1", opacityAlpha, touchButtonBumperRight)
-        val r2 = plainButton("R2", opacityAlpha, touchButtonTriggerRight)
+        val l1 = plainButton("L1", opacityAlpha, R.drawable.hypdroid_touch_bumper_left_b)
+        val l2 = plainButton("L2", opacityAlpha, R.drawable.hypdroid_touch_trigger_left_b)
+        val r1 = plainButton("R1", opacityAlpha, R.drawable.hypdroid_touch_bumper_right_b)
+        val r2 = plainButton("R2", opacityAlpha, R.drawable.hypdroid_touch_trigger_right_b)
 
         addView(
             layout, l1, shoulderWidthPx, shoulderHeightPx,
@@ -282,10 +282,10 @@ class TouchOverlay(private val activity: Activity) {
         // the physical Retroid), which touch otherwise has no way to reach.
         val centerRow = LinearLayout(activity).apply { orientation = LinearLayout.HORIZONTAL }
         val stickButtonSizePx = shoulderHeightPx
-        val l3 = plainCircleButton("L3", opacityAlpha, touchButtonStickCap)
-        val select = plainButton("SELECT", opacityAlpha, touchButtonPill)
-        val start = plainButton("START", opacityAlpha, touchButtonPill)
-        val r3 = plainCircleButton("R3", opacityAlpha, touchButtonStickCap)
+        val l3 = plainCircleButton("L3", opacityAlpha, R.drawable.hypdroid_touch_stick_cap_b)
+        val select = plainButton("SELECT", opacityAlpha, R.drawable.hypdroid_touch_pill_b)
+        val start = plainButton("START", opacityAlpha, R.drawable.hypdroid_touch_pill_b)
+        val r3 = plainCircleButton("R3", opacityAlpha, R.drawable.hypdroid_touch_stick_cap_b)
         centerRow.addView(l3, LinearLayout.LayoutParams(stickButtonSizePx, stickButtonSizePx))
         centerRow.addView(
             select,
@@ -336,10 +336,10 @@ class TouchOverlay(private val activity: Activity) {
         SDLControllerManager.nativeRemoveJoystick(deviceId)
     }
 
-    // #98 - assetRes comes from TouchButtonAssetsFlavor.kt, which is
-    // per-flavor source-set-scoped (like StorageAccessFlavor.kt): real
-    // R.drawable ids on Touch, all null on Handheld. A real compile-time
-    // reference on the flavor that has the resource, no lookup needed.
+    // #98/#102 - assets live in src/main/res/drawable, so both flavors get
+    // the same art (Handheld's Touch Controls toggle is reachable even
+    // though the hardware isn't touch-first, and should look consistent
+    // if anyone does turn it on).
     private fun themedDrawable(assetRes: Int?): Drawable? {
         return assetRes?.let { ContextCompat.getDrawable(activity, it) }
     }
