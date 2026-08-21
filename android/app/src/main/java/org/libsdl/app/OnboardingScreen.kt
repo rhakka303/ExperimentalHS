@@ -15,7 +15,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -33,8 +32,12 @@ import androidx.compose.ui.unit.dp
 // only for outlines/status text, never as another filled button - ChatGPT's
 // design review flagged that multiple solid-green buttons would compete for
 // attention as "the" primary action.
+//
+// #107 - the "lighter shade" used to be its own local HypdroidGreenLight
+// constant here, but it was byte-for-byte the same value as Theme.kt's
+// HypdroidGreenAccent (a leftover from before #92 unified the app's one
+// accent color) - now references that directly instead of duplicating it.
 private val HypdroidGreenDark = Color(0xFF1B5E20)
-private val HypdroidGreenLight = Color(0xFF4CAF50)
 
 private const val PREF_ONBOARDING_COMPLETE = "onboarding_complete"
 
@@ -240,7 +243,7 @@ internal fun OnboardingPermissionRow(
                 style = MaterialTheme.typography.labelLarge,
             )
         } else {
-            OutlinedButton(
+            HypdroidOutlinedButton(
                 onClick = onAction,
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = HypdroidGreenDark),
             ) {
@@ -273,9 +276,9 @@ private fun OnboardingFolderColumn(
         Spacer(modifier = Modifier.height(4.dp))
         Text(path ?: "Not selected", style = MaterialTheme.typography.bodyMedium)
         Spacer(modifier = Modifier.height(8.dp))
-        OutlinedButton(
+        HypdroidOutlinedButton(
             onClick = onChoose,
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = HypdroidGreenLight),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = HypdroidGreenAccent),
         ) {
             Text("Choose folder")
         }
