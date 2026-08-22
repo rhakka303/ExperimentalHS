@@ -319,7 +319,39 @@ static void format_fullscreen_render()
     int w, h;
     double ratio = static_cast<double>(g_viewport_width) / g_viewport_height;
 
-    if (VIDEO_HAS(VIDEO_RESIZED))
+    // Hypdroid Android port (#109): opt-in, off by default. Every other
+    // branch below computes a destination rect matching the *screen's* own
+    // ratio (or a hardcoded preset), which is why real widescreen content
+    // fills the screen edge-to-edge with no letterbox bars even when its
+    // actual shape doesn't match the display - root-caused to a precision
+    // mismatch elsewhere (vldp_internal.cpp's raw-computed aspect ratio for
+    // real 1920x1080 content is 177, not the named ASPECTWS preset's exact
+    // 178, so it silently misses that switch case below). Rather than widen
+    // that match and risk changing default behavior for everyone, this is a
+    // separate, explicit path: fit the video's real detected aspect ratio
+    // (g_probe_width/g_probe_height, the actual decoded MPEG dimensions,
+    // not a preset) entirely within the screen, picking whichever axis is
+    // the constraining one so the result never overflows either dimension.
+    // The existing centering math a few lines below
+    // (g_scaling_rect.x/y = (logical - scaling) >> 1) already produces
+    // correct letterbox/pillarbox bars for a scaling_rect smaller than the
+    // logical_rect in one dimension - unchanged, reused as-is.
+    if (VIDEO_HAS(PRESERVE_ASPECT) && g_probe_width > 0 && g_probe_height > 0)
+    {
+        double video_ratio = static_cast<double>(g_probe_width) / g_probe_height;
+        double screen_ratio = static_cast<double>(g_logical_rect.w) / g_logical_rect.h;
+        if (video_ratio > screen_ratio)
+        {
+            w = g_logical_rect.w;
+            h = static_cast<int>(w / video_ratio);
+        }
+        else
+        {
+            h = g_logical_rect.h;
+            w = static_cast<int>(h * video_ratio);
+        }
+    }
+    else if (VIDEO_HAS(VIDEO_RESIZED))
     {
         w = g_viewport_width;
         h = g_viewport_height;
@@ -340,8 +372,13 @@ static void format_fullscreen_render()
         }
     }
 
-    w = VIDEO_HAS(FORCE_ASPECT) ? (h * 4) / 3 : (VIDEO_HAS(IGNORE_ASPECT) ?
-                                     static_cast<int>(h * ratio) : w);
+    // PRESERVE_ASPECT already computed the correct w/h above - skip the
+    // FORCE_ASPECT/IGNORE_ASPECT override entirely so they can't fight with it.
+    if (!VIDEO_HAS(PRESERVE_ASPECT))
+    {
+        w = VIDEO_HAS(FORCE_ASPECT) ? (h * 4) / 3 : (VIDEO_HAS(IGNORE_ASPECT) ?
+                                         static_cast<int>(h * ratio) : w);
+    }
 
     g_scaling_rect.w = (w * g_scalefactor) / 100;
     g_scaling_rect.h = (h * g_scalefactor) / 100;
@@ -1391,6 +1428,7 @@ void set_sboverlay_white(bool value) { VIDEO_ASSIGN(OVERLAY_WHITE, value); }
 void set_legacy_overlay(bool value) { VIDEO_ASSIGN(LEGACY_OVERLAY, value); }
 void set_force_aspect_ratio(bool value) { VIDEO_ASSIGN(FORCE_ASPECT, value); }
 void set_ignore_aspect_ratio(bool value) { VIDEO_ASSIGN(IGNORE_ASPECT, value); }
+void set_preserve_aspect_ratio(bool value) { VIDEO_ASSIGN(PRESERVE_ASPECT, value); } // Hypdroid Android port (#109)
 void set_aspect_ratio(int fRatio) { g_aspect_ratio = fRatio; }
 void set_detected_height(int pHeight) { g_probe_height = pHeight; }
 void set_detected_width(int pWidth) { g_probe_width = pWidth; }

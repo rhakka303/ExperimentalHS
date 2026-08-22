@@ -167,6 +167,15 @@ enum VideoState : uint64_t
     KMSDRM               = 1ull << 33,
     SCALED               = 1ull << 34,
     VERTICAL_ORIENTATION = 1ull << 35,
+
+    // Hypdroid Android port (#109): opt-in alternative to every other path
+    // in format_fullscreen_render(), all of which compute a destination
+    // rect matching the *screen's* own aspect ratio. When set, the video's
+    // real detected aspect ratio (g_probe_width/g_probe_height) is fit
+    // entirely within the screen instead, with letterbox/pillarbox bars on
+    // whichever axis has room to spare. Off by default - existing
+    // screen-fill behavior is unchanged unless this is explicitly enabled.
+    PRESERVE_ASPECT      = 1ull << 36,
 };
 
 bool init_display();
@@ -226,6 +235,7 @@ void set_fullscreen(bool value);
 void set_scale_linear(bool value);
 void set_force_aspect_ratio(bool bEnabled);
 void set_ignore_aspect_ratio(bool bEnabled);
+void set_preserve_aspect_ratio(bool bEnabled); // Hypdroid Android port (#109)
 void set_scanlines(bool value);
 void set_shunt(uint8_t value);
 void set_alpha(uint8_t value);

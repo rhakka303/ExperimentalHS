@@ -1181,6 +1181,11 @@ bool parse_cmd_line(int argc, char **argv)
                 video::set_ignore_aspect_ratio(true);
                 video::set_force_aspect_ratio(false);
             }
+            else if (strcasecmp(s, "-preserve_aspect_ratio") == 0) {
+                // Hypdroid Android port (#109)
+                printline("Preserving the video's real aspect ratio, adding letterbox/pillarbox bars as needed.");
+                video::set_preserve_aspect_ratio(true);
+            }
             else if (strcasecmp(s, "-scanline_shunt") == 0) {
                 get_next_word(s, sizeof(s));
                 i = atoi(s);

@@ -172,6 +172,25 @@ fun saveDefaultArtEnabled(context: Context, enabled: Boolean) {
         .apply()
 }
 
+// #109 - off by default, matching hypseus's own existing screen-fill
+// behavior unchanged. On, passes -preserve_aspect_ratio (a real source
+// patch to hypseus-singe itself, see docs/ANDROID_PATCHES.md) so video
+// keeps its real aspect ratio with letterbox/pillarbox bars instead of
+// always filling the screen edge-to-edge.
+private const val PREF_PRESERVE_ASPECT_RATIO_ENABLED = "preserve_aspect_ratio_enabled"
+
+fun loadPreserveAspectRatioEnabled(context: Context): Boolean {
+    return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .getBoolean(PREF_PRESERVE_ASPECT_RATIO_ENABLED, false)
+}
+
+fun savePreserveAspectRatioEnabled(context: Context, enabled: Boolean) {
+    context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .edit()
+        .putBoolean(PREF_PRESERVE_ASPECT_RATIO_ENABLED, enabled)
+        .apply()
+}
+
 // <media>/bg/<gamename>.png or <media>/bg/default.png, gated entirely by
 // the two toggles above - no automatic fallback when a per-game image is
 // simply missing (that's a deliberate design choice, not an oversight):

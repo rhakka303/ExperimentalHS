@@ -252,6 +252,12 @@ private fun HypdroidApp(context: MainActivity) {
     // Art above.
     var backgroundArtEnabled by remember { mutableStateOf(loadBackgroundArtEnabled(context)) }
     var defaultArtEnabled by remember { mutableStateOf(loadDefaultArtEnabled(context)) }
+    // #109 - same synchronous-read pattern as the toggles above. Read here
+    // (MainActivity's own process) and baked directly into the launch argv
+    // below, not passed via a separate Intent extra like the touch settings -
+    // this is just a plain CLI flag, no cross-process SharedPreferences
+    // concern applies since it's resolved once at launch time.
+    var preserveAspectRatioEnabled by remember { mutableStateOf(loadPreserveAspectRatioEnabled(context)) }
     // #83 - Touch Controls. Same synchronous-read pattern as the toggles
     // above; HypseusActivity reads these same SharedPreferences directly at
     // game-launch time rather than via an Intent extra (see TouchControls.kt).
@@ -428,6 +434,12 @@ private fun HypdroidApp(context: MainActivity) {
                     if (options?.bezelEnabled == true) {
                         args += bezelLaunchArgs(homeDir, game.name)
                     }
+                    // #109 - off by default (hypseus's own existing
+                    // screen-fill behavior). On: real letterbox/pillarbox
+                    // bars, see docs/ANDROID_PATCHES.md for the source patch.
+                    if (preserveAspectRatioEnabled) {
+                        args += "-preserve_aspect_ratio"
+                    }
                     options?.arguments?.forEach { entry ->
                         args += entry.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
                     }
@@ -532,6 +544,11 @@ private fun HypdroidApp(context: MainActivity) {
             onDefaultArtToggle = { enabled ->
                 saveDefaultArtEnabled(context, enabled)
                 defaultArtEnabled = enabled
+            },
+            preserveAspectRatioEnabled = preserveAspectRatioEnabled,
+            onPreserveAspectRatioToggle = { enabled ->
+                savePreserveAspectRatioEnabled(context, enabled)
+                preserveAspectRatioEnabled = enabled
             },
             onBack = { currentScreen = Screen.Settings },
         )
