@@ -434,6 +434,13 @@ private fun HypdroidApp(context: MainActivity) {
                     if (options?.bezelEnabled == true) {
                         args += bezelLaunchArgs(homeDir, game.name)
                     }
+                    // #111 - off by default (hypseus's own existing
+                    // fixed-ratio scoreboard bezel sizing). On: fits the
+                    // scoreboard bezel to the real black-bar space, see
+                    // docs/ANDROID_PATCHES.md for the source patch.
+                    if (options?.scorebezelAutofit == true) {
+                        args += "-scorebezel_autofit"
+                    }
                     // #109 - off by default (hypseus's own existing
                     // screen-fill behavior). On: real letterbox/pillarbox
                     // bars, see docs/ANDROID_PATCHES.md for the source patch.
@@ -610,6 +617,10 @@ private fun HypdroidApp(context: MainActivity) {
                     onBezelToggle = { enabled ->
                         saveBezelEnabled(context, game.name, enabled)
                         updateGameOptions(game.name, options.copy(bezelEnabled = enabled))
+                    },
+                    onScorebezelAutofitToggle = { enabled ->
+                        saveScorebezelAutofit(context, game.name, enabled)
+                        updateGameOptions(game.name, options.copy(scorebezelAutofit = enabled))
                     },
                     onAddArgument = { arg ->
                         val updated = options.arguments + arg

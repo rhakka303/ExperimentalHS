@@ -46,6 +46,7 @@ fun GameOptionsScreen(
     globalCoverArtEnabled: Boolean,
     onCoverArtChange: (CoverArtType) -> Unit,
     onBezelToggle: (Boolean) -> Unit,
+    onScorebezelAutofitToggle: (Boolean) -> Unit,
     onAddArgument: (String) -> Unit,
     onRemoveArgument: (String) -> Unit,
     onBack: () -> Unit,
@@ -103,13 +104,40 @@ fun GameOptionsScreen(
 
             OutlinedCard(modifier = Modifier.weight(1f)) {
                 Column(modifier = Modifier.padding(12.dp)) {
-                    Text("Bezel", style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        if (options.bezelEnabled) "On" else "Off",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Bezel", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                if (options.bezelEnabled) "On" else "Off",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                        HypdroidSwitch(checked = options.bezelEnabled, onCheckedChange = onBezelToggle)
+                    }
+
+                    // #111 - fits the scoreboard bezel (score/lives/credits
+                    // panel) to the real black-bar space next to the video
+                    // instead of a fixed fraction of the video's own width.
+                    // Same card as Bezel above since it's the same general
+                    // area of settings, but independent - matters for any
+                    // game with a scoreboard bezel active, whether that's
+                    // this Bezel toggle or the game's own script turning
+                    // its scoreboard bezel on directly (like Esh's
+                    // Aurunmilla does).
                     Spacer(modifier = Modifier.height(8.dp))
-                    HypdroidSwitch(checked = options.bezelEnabled, onCheckedChange = onBezelToggle)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Scorebezel Autofit", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                if (options.scorebezelAutofit) "On" else "Off",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                        HypdroidSwitch(
+                            checked = options.scorebezelAutofit,
+                            onCheckedChange = onScorebezelAutofitToggle,
+                        )
+                    }
                 }
             }
         }

@@ -9,6 +9,12 @@ data class GameOptions(
     val coverArt: CoverArtType?, // null = no override, resolves to the app default (box)
     val bezelEnabled: Boolean,
     val arguments: List<String>,
+    // #111 - only meaningful while the game's own scoreboard bezel is
+    // actually active (either this Bezel toggle, or the game's own script
+    // calling scoreBezelEnable() directly, like Esh's Aurunmilla does) - a
+    // harmless no-op arg otherwise. Off by default, same fixed-ratio bezel
+    // sizing as before unless explicitly enabled.
+    val scorebezelAutofit: Boolean = false,
 )
 
 private const val GAME_OPTIONS_PREFS = "hypdroid_game_options"
@@ -16,6 +22,7 @@ private const val GAME_OPTIONS_PREFS = "hypdroid_game_options"
 private fun coverArtKey(gameName: String) = "coverart_$gameName"
 private fun bezelKey(gameName: String) = "bezel_$gameName"
 private fun argumentsKey(gameName: String) = "args_$gameName"
+private fun scorebezelAutofitKey(gameName: String) = "scorebezel_autofit_$gameName"
 
 fun loadGameOptions(context: Context, gameName: String): GameOptions {
     val prefs = context.getSharedPreferences(GAME_OPTIONS_PREFS, Context.MODE_PRIVATE)
@@ -30,7 +37,8 @@ fun loadGameOptions(context: Context, gameName: String): GameOptions {
     val arguments = (prefs.getString(argumentsKey(gameName), "") ?: "")
         .split("\n")
         .filter { it.isNotBlank() }
-    return GameOptions(coverArt, bezelEnabled, arguments)
+    val scorebezelAutofit = prefs.getBoolean(scorebezelAutofitKey(gameName), false)
+    return GameOptions(coverArt, bezelEnabled, arguments, scorebezelAutofit)
 }
 
 fun saveCoverArt(context: Context, gameName: String, coverArt: CoverArtType) {
@@ -44,6 +52,13 @@ fun saveBezelEnabled(context: Context, gameName: String, enabled: Boolean) {
     context.getSharedPreferences(GAME_OPTIONS_PREFS, Context.MODE_PRIVATE)
         .edit()
         .putBoolean(bezelKey(gameName), enabled)
+        .apply()
+}
+
+fun saveScorebezelAutofit(context: Context, gameName: String, enabled: Boolean) {
+    context.getSharedPreferences(GAME_OPTIONS_PREFS, Context.MODE_PRIVATE)
+        .edit()
+        .putBoolean(scorebezelAutofitKey(gameName), enabled)
         .apply()
 }
 
