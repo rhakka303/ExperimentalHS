@@ -972,6 +972,11 @@ bool parse_cmd_line(int argc, char **argv)
                     result = false;
                 }
             }
+            else if (strcasecmp(s, "-scorebezel_autofit") == 0) {
+                // Hypdroid Android port (#111)
+                printline("Fitting the scoreboard bezel to the real pillarbox bar space.");
+                video::set_scorebezel_autofit(true);
+            }
             else if (strcasecmp(s, "-scorepanel") == 0) {
                 lair *game_lair_or_sa = dynamic_cast<lair *>(g_game);
                 thayers *game_thayers = dynamic_cast<thayers *>(g_game);

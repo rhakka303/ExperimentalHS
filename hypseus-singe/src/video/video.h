@@ -176,6 +176,18 @@ enum VideoState : uint64_t
     // whichever axis has room to spare. Off by default - existing
     // screen-fill behavior is unchanged unless this is explicitly enabled.
     PRESERVE_ASPECT      = 1ull << 36,
+
+    // Hypdroid Android port (#111): opt-in alternative to SCOREBOARD_BEZEL's
+    // default sizing, which scales the bezel to a fixed fraction of the
+    // video's own width (g_bezel_scalewidth = w / scale) regardless of how
+    // wide the actual pillarbox bar next to the video is. When set, and the
+    // video is pillarboxed (g_scaling_rect.x > 0), the bezel is instead sized
+    // to fit entirely within that real bar space, so it stops cropping into
+    // or bleeding past the video's actual edge. Off by default - existing
+    // fixed-ratio sizing is unchanged unless this is explicitly enabled, so
+    // anyone who already hand-tuned -scorebezel_scale/-scorebezel_position
+    // for their own setup isn't overridden.
+    SCOREBOARD_AUTOFIT   = 1ull << 37,
 };
 
 bool init_display();
@@ -236,6 +248,7 @@ void set_scale_linear(bool value);
 void set_force_aspect_ratio(bool bEnabled);
 void set_ignore_aspect_ratio(bool bEnabled);
 void set_preserve_aspect_ratio(bool bEnabled); // Hypdroid Android port (#109)
+void set_scorebezel_autofit(bool bEnabled); // Hypdroid Android port (#111)
 void set_scanlines(bool value);
 void set_shunt(uint8_t value);
 void set_alpha(uint8_t value);

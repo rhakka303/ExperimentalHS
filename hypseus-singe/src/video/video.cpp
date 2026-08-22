@@ -398,13 +398,39 @@ static void format_fullscreen_render()
 
     if (VIDEO_HAS(SCOREBOARD_BEZEL))
     {
-        g_bezel_scalewidth = w;
         double bezel_ratio = static_cast<double>(g_scoreboard_h) / g_scoreboard_w;
-        double scale = 9.0 - (static_cast<double>(g_scoreboard_bezel_scale) * 2.0 / 10.0);
 
-        g_scoreboard_bezel_rect = {scoreboard_window_pos_x, scoreboard_window_pos_y,
-                           static_cast<int>(g_bezel_scalewidth / scale),
-                           static_cast<int>((g_bezel_scalewidth / scale) * bezel_ratio)};
+        // Hypdroid Android port (#111): default sizing below scales the
+        // bezel to a fixed fraction of the video's own width, unrelated to
+        // how wide the real pillarbox bar next to the video actually is -
+        // whether that fixed fraction fits inside the real bar or overflows
+        // past it is coincidental per screen/game combination. When
+        // SCOREBOARD_AUTOFIT is set and the video is pillarboxed
+        // (g_scaling_rect.x > 0, i.e. real bar space exists on each side),
+        // size the bezel to fit entirely within that real space instead,
+        // clamped to the screen height too so it can never overflow either
+        // dimension. Anchored to the top-left corner of the left bar,
+        // matching today's default (0, 0) position.
+        if (VIDEO_HAS(SCOREBOARD_AUTOFIT) && g_scaling_rect.x > 0)
+        {
+            int rect_w = g_scaling_rect.x;
+            int rect_h = static_cast<int>(rect_w * bezel_ratio);
+            if (rect_h > g_logical_rect.h)
+            {
+                rect_h = g_logical_rect.h;
+                rect_w = static_cast<int>(rect_h / bezel_ratio);
+            }
+            g_scoreboard_bezel_rect = {0, 0, rect_w, rect_h};
+        }
+        else
+        {
+            g_bezel_scalewidth = w;
+            double scale = 9.0 - (static_cast<double>(g_scoreboard_bezel_scale) * 2.0 / 10.0);
+
+            g_scoreboard_bezel_rect = {scoreboard_window_pos_x, scoreboard_window_pos_y,
+                               static_cast<int>(g_bezel_scalewidth / scale),
+                               static_cast<int>((g_bezel_scalewidth / scale) * bezel_ratio)};
+        }
         VIDEO_SET(BEZEL_TOGGLE);
     }
 
@@ -1429,6 +1455,7 @@ void set_legacy_overlay(bool value) { VIDEO_ASSIGN(LEGACY_OVERLAY, value); }
 void set_force_aspect_ratio(bool value) { VIDEO_ASSIGN(FORCE_ASPECT, value); }
 void set_ignore_aspect_ratio(bool value) { VIDEO_ASSIGN(IGNORE_ASPECT, value); }
 void set_preserve_aspect_ratio(bool value) { VIDEO_ASSIGN(PRESERVE_ASPECT, value); } // Hypdroid Android port (#109)
+void set_scorebezel_autofit(bool value) { VIDEO_ASSIGN(SCOREBOARD_AUTOFIT, value); } // Hypdroid Android port (#111)
 void set_aspect_ratio(int fRatio) { g_aspect_ratio = fRatio; }
 void set_detected_height(int pHeight) { g_probe_height = pHeight; }
 void set_detected_width(int pWidth) { g_probe_width = pWidth; }
