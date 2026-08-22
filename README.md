@@ -1,18 +1,18 @@
 # Hypdroid
 
-A standalone Android port of [Hypseus Singe](https://github.com/DirtBagXon/hypseus-singe), the laserdisc arcade emulator for fan-made Singe/Lua games, paired with an original, from-scratch native Android launcher: a visual game gallery, gamepad-first navigation, and full touch controls.
+A standalone Android port of [Hypseus Singe](https://github.com/DirtBagXon/hypseus-singe), the laserdisc arcade emulator for fan-made Singe/Lua games, paired with an original, from-scratch native Android launcher: a visual game gallery, built-in gamepad navigation, and full touch controls.
 
 **Two flavors, two targets:**
 
-- **Hypdroid Handheld** — gamepad-first, for Android gaming handhelds and SBCs. Storage access via Storage Access Framework only, no broad file permissions.
-- **Hypdroid Touch** — for stock/OEM Android tablets and phones, with an on-screen touch control overlay alongside gamepad support.
+- **Hypdroid Handheld**: built-in gamepad support, for Android gaming handhelds and SBCs. Storage access via Storage Access Framework only, no broad file permissions.
+- **Hypdroid Touch**: for stock/OEM Android tablets and phones, with an on-screen touch control overlay alongside gamepad support.
 
 **Status:** actively in development, running real games on real hardware. No public APK releases yet.
 
 ## What this is
 
 - A from-scratch native build of hypseus-singe for `arm64-v8a` Android, using SDL3's official Android support.
-- A visual game gallery/launcher (box art, logo overlay, background art) instead of a bare file picker — points at a folder you already have populated with your own game/media files rather than bundling or scraping anything.
+- A visual game gallery/launcher (box art, logo overlay, background art) instead of a bare file picker, pointing at a folder you already have populated with your own game/media files rather than bundling or scraping anything.
 - Per-game custom launch options via long-press, on top of hypseus's existing `.ini`-driven input config.
 - Touch controls (Touch flavor) and physical gamepad support (both flavors), sharing the same underlying input-binding system.
 
@@ -60,6 +60,14 @@ This artwork is what represents each game in the carousel. `box`, `cd`, and `log
 - Background art (`bg/`) must be sized to match your device's own screen resolution, since it's shown full-bleed, not scaled or cropped to fit.
 
 See the Folder Structure section above for how to set up the `media/` folder itself.
+
+### Troubleshooting
+
+**Games don't show on the dashboard?**
+
+If you picked a Game folder on external/removable SD card storage and no games appear, this is usually an All Files Access limitation, Handheld's Storage Access Framework permission doesn't always cover raw file reads on external SD cards depending on your device and Android build. If this happens, install Hypdroid Touch instead; it requests All Files Access and can read SD card folders that Handheld cannot.
+
+Also double-check your device's own Settings: go to Settings > Apps > All files access, find Hypdroid Touch, and make sure the flag is turned to Allow. The in-app onboarding screen's "Access granted" checkmark isn't always reliable, some devices show it as granted in-app while the real system setting is still blocked, so turn it on manually there if needed.
 
 ## Status / roadmap
 
