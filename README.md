@@ -50,7 +50,16 @@ hypseus/
 └── screenshots/
 ```
 
-Side Note: All artwork requires PNG format
+### Media Instructions
+
+This artwork is what represents each game in the carousel. `box`, `cd`, and `logo` are three different ways to represent the same game: pick whichever one you have art for, per-game or globally in Settings. `bg` is a separate, optional full-screen background shown behind the carousel itself.
+
+- Filename must exactly match the game's identifier, the same name used for its `roms/` or `singe/` folder.
+  - For example: `box/dragonslair.png`, `cd/dragonslair.png`, `logo/dragonslair.png`, `bg/dragonslair.png`.
+- PNG format only, for every art type.
+- Background art (`bg/`) must be sized to match your device's own screen resolution, since it's shown full-bleed, not scaled or cropped to fit.
+
+See the Folder Structure section above for how to set up the `media/` folder itself.
 
 ## Status / roadmap
 
