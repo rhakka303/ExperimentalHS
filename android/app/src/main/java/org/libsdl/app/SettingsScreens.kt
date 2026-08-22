@@ -187,6 +187,8 @@ fun AppSettingsScreen(
     defaultArtEnabled: Boolean,
     onBackgroundArtToggle: (Boolean) -> Unit,
     onDefaultArtToggle: (Boolean) -> Unit,
+    preserveAspectRatioEnabled: Boolean,
+    onPreserveAspectRatioToggle: (Boolean) -> Unit,
     onBack: () -> Unit,
 ) {
     BackHandler(onBack = onBack)
@@ -265,6 +267,37 @@ fun AppSettingsScreen(
                     }
                 }
             }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            // #109 - off by default, matches hypseus's own existing
+            // screen-fill behavior unchanged. On: real letterbox/pillarbox
+            // bars for video whose native aspect ratio doesn't match the
+            // screen, via a real source patch to hypseus-singe itself
+            // (see docs/ANDROID_PATCHES.md), not just an Android-side crop.
+            OutlinedCard(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Preserve Video Aspect Ratio", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                "On: adds black bars if the video doesn't match your screen. Off: fills the screen.",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                        HypdroidSwitch(checked = preserveAspectRatioEnabled, onCheckedChange = onPreserveAspectRatioToggle)
+                    }
+                }
+            }
+            // No second toggle to pair this with yet - an invisible spacer
+            // claims the other half of the row so this card stays the same
+            // size as its siblings above instead of stretching full-width.
+            Spacer(modifier = Modifier.weight(1f))
         }
     }
 
