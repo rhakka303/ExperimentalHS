@@ -4,8 +4,8 @@ A standalone Android port of [Hypseus Singe](https://github.com/DirtBagXon/hypse
 
 **Two flavors, two targets:**
 
-- **Hypdroid Handheld**: built-in gamepad support, for Android gaming handhelds and SBCs. Storage access via Storage Access Framework only, no broad file permissions.
-- **Hypdroid Touch**: for stock/OEM Android tablets and phones, with an on-screen touch control overlay alongside gamepad support.
+- **Hypdroid Handheld**: for Android gaming handhelds with built-in physical controls (D-pad, buttons, sticks). Storage access via Storage Access Framework only, no broad file permissions requested.
+- **Hypdroid Touch**: for stock/OEM Android tablets and phones without built-in game controls. Adds an on-screen touch control overlay alongside gamepad support, and requests All Files Access, needed to reliably read game files from external SD cards on some devices (see Troubleshooting).
 
 **Status:** actively in development, running real games on real hardware. No public APK releases yet.
 
