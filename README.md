@@ -7,7 +7,25 @@ A standalone Android port of [Hypseus Singe](https://github.com/DirtBagXon/hypse
 - **Hypdroid Handheld**: for Android gaming handhelds with built-in physical controls (D-pad, buttons, sticks). Storage access via Storage Access Framework only, no broad file permissions requested.
 - **Hypdroid Touch**: for stock/OEM Android tablets and phones without built-in game controls. Adds an on-screen touch control overlay alongside gamepad support, and requests All Files Access, needed to reliably read game files from external SD cards on some devices (see Troubleshooting).
 
-**Status:** actively in development, running real games on real hardware. No public APK releases yet.
+**Status:** actively in development, running real games on real hardware. See the Releases page for the latest APK downloads.
+
+## Getting Started
+
+**1. Pick your APK.** Download the one matching your device from the Releases page:
+   - **Hypdroid Handheld**, for gaming handhelds with physical controls (D-pad, buttons, sticks), doesn't require All Files Access
+   - **Hypdroid Touch**, for regular tablets/phones without built-in game controls, requests All Files Access to reliably read your game files
+
+**2. Install it.** Hypdroid isn't on the Play Store, it's sideloaded, so Android will block the install the first time with a message like *"For your security, your phone is not allowed to install unknown apps from this source."*
+   - Tap the **Settings** button on that message (it takes you straight to the right screen).
+   - Turn on **Allow from this source** for whichever app you used to open the APK (your browser, file manager, etc.).
+   - Go back and tap the APK file again, it will now let you install normally.
+   - This permission is per-app and only needs to be granted once for whatever app you use to open APK files.
+
+**3. Set up your folders first (if you haven't already).** See Folder Structure below, you'll need a Game folder with your own game files, and optionally a Media folder for box art. Hypdroid doesn't provide any of this itself.
+
+**4. Open the app.** Onboarding will walk you through picking your Game folder (and Media folder, if you set one up). Hypdroid Touch will also ask for All Files Access at this point, needed to reliably read game files, see Troubleshooting below if that step gives you trouble.
+
+**5. Your games should now show up on the dashboard.** If they don't, see Troubleshooting below.
 
 ## What this is
 
@@ -29,8 +47,8 @@ Media folder (recommended folder name: media)
 
 ```text
 hypseus/
-├── roms/     ← Daphne-native ROM(s)
-├── vldp/     ← Daphne-native framefile folder(s)
+├── roms/     ← Daphne ROM(s)
+├── vldp/     ← Daphne framefile folder(s)
 └── singe/    ← fan-made games
 
 media/
