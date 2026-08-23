@@ -18,6 +18,8 @@ A standalone Android port of [Hypseus Singe](https://github.com/DirtBagXon/hypse
 
 This repo does **not** contain, bundle, or distribute any ROMs, laserdisc video dumps, or artwork. You provide your own game files; the app points at wherever you keep them.
 
+This software is intended for educational purposes only.
+
 ## Folder Structure
 
 Game folder (recommended folder name: hypseus)
