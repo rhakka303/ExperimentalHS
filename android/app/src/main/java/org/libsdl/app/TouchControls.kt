@@ -373,8 +373,15 @@ class TouchOverlay(private val activity: Activity) {
         // solid always, so touch feedback stays clear even at low resting
         // visibility - now the app's own green accent, matching the #98
         // static-button press tint instead of RadialGamePad's default gray.
+        // #114 - normalColor (the D-pad/ABXY buttons' own default-state
+        // color, confirmed against RadialGamePadTheme.kt's own doc comment,
+        // not the press highlight above) now matches the navy used by the
+        // #98/#102 static shoulder-button vector art (hypdroid_touch_*.xml,
+        // e.g. #111B2B's mid-layer fill), instead of RadialGamePad's
+        // default gray - same visual family as the app's other touch
+        // controls, not the unrelated green accent used for focus rings.
         return RadialGamePadTheme(
-            normalColor = Color.argb(alpha, 125, 125, 125),
+            normalColor = Color.argb(alpha, 17, 27, 43),
             pressedColor = HypdroidGreenAccent.toArgb(),
             simulatedColor = Color.argb(alpha, 125, 125, 125),
             textColor = Color.argb(alpha, 255, 255, 255),
