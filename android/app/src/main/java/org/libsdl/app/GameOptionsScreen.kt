@@ -47,6 +47,7 @@ fun GameOptionsScreen(
     onCoverArtChange: (CoverArtType) -> Unit,
     onBezelToggle: (Boolean) -> Unit,
     onScorebezelAutofitToggle: (Boolean) -> Unit,
+    onOverlayOnTopToggle: (Boolean) -> Unit,
     onAddArgument: (String) -> Unit,
     onRemoveArgument: (String) -> Unit,
     onBack: () -> Unit,
@@ -136,6 +137,27 @@ fun GameOptionsScreen(
                         HypdroidSwitch(
                             checked = options.scorebezelAutofit,
                             onCheckedChange = onScorebezelAutofitToggle,
+                        )
+                    }
+
+                    // #117 - redraws whatever a game draws via spriteDraw
+                    // (score/lives/skip icon/move arrows) a second time on
+                    // top of custom bezel art, since it's otherwise buried
+                    // under the bezel. Unrelated to Scorebezel Autofit above
+                    // - that's the Daphne-native scoreboard system, this is
+                    // the general Singe overlay any game uses.
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Overlay On Top", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                if (options.overlayOnTop) "On" else "Off",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                        HypdroidSwitch(
+                            checked = options.overlayOnTop,
+                            onCheckedChange = onOverlayOnTopToggle,
                         )
                     }
                 }

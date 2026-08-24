@@ -12,14 +12,16 @@ A standalone Android port of [Hypseus Singe](https://github.com/DirtBagXon/hypse
 ## Getting Started
 
 **1. Pick your APK.** Download the one matching your device from the Releases page:
-   - **Hypdroid Handheld**, for gaming handhelds with physical controls (D-pad, buttons, sticks), doesn't require All Files Access
-   - **Hypdroid Touch**, for regular tablets/phones without built-in game controls, requests All Files Access to reliably read your game files
+
+- **Hypdroid Handheld**, for gaming handhelds with physical controls (D-pad, buttons, sticks), doesn't require All Files Access
+- **Hypdroid Touch**, for regular tablets/phones without built-in game controls, requests All Files Access to reliably read your game files
 
 **2. Install it.** Hypdroid isn't on the Play Store, it's sideloaded, so Android will block the install the first time with a message like *"For your security, your phone is not allowed to install unknown apps from this source."*
-   - Tap the **Settings** button on that message (it takes you straight to the right screen).
-   - Turn on **Allow from this source** for whichever app you used to open the APK (your browser, file manager, etc.).
-   - Go back and tap the APK file again, it will now let you install normally.
-   - This permission is per-app and only needs to be granted once for whatever app you use to open APK files.
+
+- Tap the **Settings** button on that message (it takes you straight to the right screen).
+- Turn on **Allow from this source** for whichever app you used to open the APK (your browser, file manager, etc.).
+- Go back and tap the APK file again, it will now let you install normally.
+- This permission is per-app and only needs to be granted once for whatever app you use to open APK files.
 
 **3. Set up your folders first (if you haven't already).** See Folder Structure below, you'll need a Game folder with your own game files, and optionally a Media folder for box art. Hypdroid doesn't provide any of this itself.
 

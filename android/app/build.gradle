@@ -50,6 +50,14 @@ android {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
+        debug {
+            // Separate package ID from release, so a debug/test build
+            // installs alongside the real release install instead of
+            // silently overwriting it (both share the same applicationId
+            // otherwise, since AGP's default debug build type has no
+            // suffix of its own).
+            applicationIdSuffix ".debug"
+        }
     }
     // Two flavors, same codebase, zero behavior differences right now -
     // just distinct names/package IDs so both can be installed side by

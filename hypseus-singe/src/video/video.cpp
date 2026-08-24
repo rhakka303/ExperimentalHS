@@ -1456,6 +1456,7 @@ void set_force_aspect_ratio(bool value) { VIDEO_ASSIGN(FORCE_ASPECT, value); }
 void set_ignore_aspect_ratio(bool value) { VIDEO_ASSIGN(IGNORE_ASPECT, value); }
 void set_preserve_aspect_ratio(bool value) { VIDEO_ASSIGN(PRESERVE_ASPECT, value); } // Hypdroid Android port (#109)
 void set_scorebezel_autofit(bool value) { VIDEO_ASSIGN(SCOREBOARD_AUTOFIT, value); } // Hypdroid Android port (#111)
+void set_overlay_on_top(bool value) { VIDEO_ASSIGN(OVERLAY_ON_TOP, value); } // Hypdroid Android port (#117)
 void set_aspect_ratio(int fRatio) { g_aspect_ratio = fRatio; }
 void set_detected_height(int pHeight) { g_probe_height = pHeight; }
 void set_detected_width(int pWidth) { g_probe_width = pWidth; }
@@ -2724,6 +2725,21 @@ void vid_blit()
     }
 
     if (VIDEO_HAS(BEZEL_TOGGLE)) vid_render_bezels();
+
+    // Hypdroid Android port (#117): redraw the Singe overlay (score, lives,
+    // skip icon, move arrows, etc. - everything a game draws via spriteDraw)
+    // a second time here, on top of whatever bezel art vid_render_bezels()
+    // just drew over the whole screen. The first draw above (line ~2694)
+    // happened before the bezel and gets buried under it; this repeats that
+    // exact same draw (same source/dest rects) now that the render target is
+    // back to the real screen, so the overlay isn't hidden by custom bezel
+    // art. No effect unless a game/user has explicitly enabled this.
+    if (VIDEO_HAS(OVERLAY_ON_TOP) && g_overlay_texture)
+    {
+        SDL_FRect frect;
+        SDL_RectToFRect(&g_limit_rect, &frect);
+        SDL_RenderTexture(g_renderer, g_overlay_texture, &frect, &fScaleRect);
+    }
 
     if (VIDEO_HAS(TAKE_SCREENSHOT))
     {

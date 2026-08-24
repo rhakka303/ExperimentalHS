@@ -188,6 +188,19 @@ enum VideoState : uint64_t
     // anyone who already hand-tuned -scorebezel_scale/-scorebezel_position
     // for their own setup isn't overridden.
     SCOREBOARD_AUTOFIT   = 1ull << 37,
+
+    // Hypdroid Android port (#117): opt-in redraw of the Singe overlay
+    // (g_overlay_texture, everything a game draws via spriteDraw - score,
+    // lives, skip icon, move arrows, etc.) a second time after
+    // vid_render_bezels(), so it renders on top of custom bezel art instead
+    // of being buried under it. The overlay is normally composited with the
+    // video early in vid_blit(), well before the bezel draws over the whole
+    // screen; this doesn't change that first draw, it just repeats it later
+    // at the same position. Off by default - existing behavior (overlay
+    // hidden under any custom bezel) is unchanged unless this is explicitly
+    // enabled. Unrelated to SCOREBOARD_BEZEL/the Daphne-native scoreboard
+    // system, which is a completely separate rendering path.
+    OVERLAY_ON_TOP       = 1ull << 38,
 };
 
 bool init_display();
@@ -249,6 +262,7 @@ void set_force_aspect_ratio(bool bEnabled);
 void set_ignore_aspect_ratio(bool bEnabled);
 void set_preserve_aspect_ratio(bool bEnabled); // Hypdroid Android port (#109)
 void set_scorebezel_autofit(bool bEnabled); // Hypdroid Android port (#111)
+void set_overlay_on_top(bool bEnabled); // Hypdroid Android port (#117)
 void set_scanlines(bool value);
 void set_shunt(uint8_t value);
 void set_alpha(uint8_t value);

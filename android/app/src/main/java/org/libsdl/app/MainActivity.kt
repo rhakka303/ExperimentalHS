@@ -441,6 +441,13 @@ private fun HypdroidApp(context: MainActivity) {
                     if (options?.scorebezelAutofit == true) {
                         args += "-scorebezel_autofit"
                     }
+                    // #117 - off by default. On: redraws the Singe overlay
+                    // (score/lives/skip/arrows) on top of custom bezel art
+                    // instead of leaving it buried underneath, see
+                    // docs/ANDROID_PATCHES.md for the source patch.
+                    if (options?.overlayOnTop == true) {
+                        args += "-overlay_on_top"
+                    }
                     // #109 - off by default (hypseus's own existing
                     // screen-fill behavior). On: real letterbox/pillarbox
                     // bars, see docs/ANDROID_PATCHES.md for the source patch.
@@ -621,6 +628,10 @@ private fun HypdroidApp(context: MainActivity) {
                     onScorebezelAutofitToggle = { enabled ->
                         saveScorebezelAutofit(context, game.name, enabled)
                         updateGameOptions(game.name, options.copy(scorebezelAutofit = enabled))
+                    },
+                    onOverlayOnTopToggle = { enabled ->
+                        saveOverlayOnTop(context, game.name, enabled)
+                        updateGameOptions(game.name, options.copy(overlayOnTop = enabled))
                     },
                     onAddArgument = { arg ->
                         val updated = options.arguments + arg
