@@ -93,9 +93,30 @@ else()
 endif()
 string(REGEX REPLACE "^v" "" RESULT ${VER_TAG})
 string(REGEX REPLACE "[-\\.]" ";" RESULT ${RESULT})
-list(GET RESULT 0 VER_MAJOR)
-list(GET RESULT 1 VER_MINOR)
-list(GET RESULT 2 VER_PATCH)
+# Hypdroid Android port: this assumed every git tag in the repo has exactly
+# 3 dot/dash-separated parts (MAJOR.MINOR.PATCH). Since hypseus-singe is
+# vendored as plain files in the same git repo (not a submodule), this also
+# picks up Hypdroid's own release tags (e.g. "v1.0", "v2.0" - deliberately
+# 2-part, not 3), which crashed list(GET RESULT 2 ...) once any such tag
+# existed (repo had zero tags before the v1.0 release, so this path was
+# never actually exercised until then). Defensive now - any tag with fewer
+# than 3 parts just gets "0" for the missing ones instead of crashing.
+list(LENGTH RESULT VER_PARTS_COUNT)
+if(VER_PARTS_COUNT GREATER 0)
+    list(GET RESULT 0 VER_MAJOR)
+else()
+    set(VER_MAJOR "0")
+endif()
+if(VER_PARTS_COUNT GREATER 1)
+    list(GET RESULT 1 VER_MINOR)
+else()
+    set(VER_MINOR "0")
+endif()
+if(VER_PARTS_COUNT GREATER 2)
+    list(GET RESULT 2 VER_PATCH)
+else()
+    set(VER_PATCH "0")
+endif()
 if(NOT "${VER_GIT_COUNT}" EQUAL "0")
     set(VER_TAG "${VER_TAG}-${VER_GIT_COUNT}")
 endif()
