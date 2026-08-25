@@ -45,8 +45,23 @@ android {
             }
         }
     }
+    signingConfigs {
+        release {
+            // Reuses the same debug keystore every build has been signed
+            // with since v1.0 - there's no separate release keystore.
+            // Applying it here means assembleRelease alone produces a
+            // signed, installable APK, with no manual apksigner step to
+            // forget and no reason to ever build a "release" via the
+            // debug build type again. See #129.
+            storeFile file("${System.getProperty('user.home')}/.android/debug.keystore")
+            storePassword "android"
+            keyAlias "androiddebugkey"
+            keyPassword "android"
+        }
+    }
     buildTypes {
         release {
+            signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
