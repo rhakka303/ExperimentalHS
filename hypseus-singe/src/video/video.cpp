@@ -338,7 +338,7 @@ static void format_fullscreen_render()
     // logical_rect in one dimension - unchanged, reused as-is.
     if (VIDEO_HAS(PRESERVE_ASPECT) && g_probe_width > 0 && g_probe_height > 0)
     {
-        double video_ratio = static_cast<double>(g_probe_width) / g_probe_height;
+        double video_ratio = static_cast<double>(g_viewport_width) / g_viewport_height;
         double screen_ratio = static_cast<double>(g_logical_rect.w) / g_logical_rect.h;
         if (video_ratio > screen_ratio)
         {
@@ -1456,7 +1456,7 @@ void set_force_aspect_ratio(bool value) { VIDEO_ASSIGN(FORCE_ASPECT, value); }
 void set_ignore_aspect_ratio(bool value) { VIDEO_ASSIGN(IGNORE_ASPECT, value); }
 void set_preserve_aspect_ratio(bool value) { VIDEO_ASSIGN(PRESERVE_ASPECT, value); } // Hypdroid Android port (#109)
 void set_scorebezel_autofit(bool value) { VIDEO_ASSIGN(SCOREBOARD_AUTOFIT, value); } // Hypdroid Android port (#111)
-void set_overlay_on_top(bool value) { VIDEO_ASSIGN(OVERLAY_ON_TOP, value); } // Hypdroid Android port (#117)
+void set_overlaybezel(bool value) { VIDEO_ASSIGN(OVERLAY_BEZEL, value); } // Hypdroid Android port (#117)
 void set_aspect_ratio(int fRatio) { g_aspect_ratio = fRatio; }
 void set_detected_height(int pHeight) { g_probe_height = pHeight; }
 void set_detected_width(int pWidth) { g_probe_width = pWidth; }
@@ -2733,8 +2733,11 @@ void vid_blit()
     // happened before the bezel and gets buried under it; this repeats that
     // exact same draw (same source/dest rects) now that the render target is
     // back to the real screen, so the overlay isn't hidden by custom bezel
-    // art. No effect unless a game/user has explicitly enabled this.
-    if (VIDEO_HAS(OVERLAY_ON_TOP) && g_overlay_texture)
+    // art. No effect unless a game/user has explicitly enabled this. Also
+    // requires a real g_bezel_texture to actually be loaded (#124) - without
+    // one there's nothing to be "on top of", and redrawing anyway produced
+    // visible ghosting/double-drawn text, confirmed on real hardware.
+    if (VIDEO_HAS(OVERLAY_BEZEL) && g_overlay_texture && g_bezel_texture)
     {
         SDL_FRect frect;
         SDL_RectToFRect(&g_limit_rect, &frect);

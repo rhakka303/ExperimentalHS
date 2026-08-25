@@ -19,7 +19,7 @@ data class GameOptions(
     // game draws via spriteDraw) a second time on top of custom bezel art,
     // since it's otherwise buried under the bezel. Unrelated to
     // scorebezelAutofit/the Daphne-native scoreboard system. Off by default.
-    val overlayOnTop: Boolean = false,
+    val overlayBezel: Boolean = false,
 )
 
 private const val GAME_OPTIONS_PREFS = "hypdroid_game_options"
@@ -28,7 +28,7 @@ private fun coverArtKey(gameName: String) = "coverart_$gameName"
 private fun bezelKey(gameName: String) = "bezel_$gameName"
 private fun argumentsKey(gameName: String) = "args_$gameName"
 private fun scorebezelAutofitKey(gameName: String) = "scorebezel_autofit_$gameName"
-private fun overlayOnTopKey(gameName: String) = "overlay_on_top_$gameName"
+private fun overlayBezelKey(gameName: String) = "overlaybezel_$gameName"
 
 fun loadGameOptions(context: Context, gameName: String): GameOptions {
     val prefs = context.getSharedPreferences(GAME_OPTIONS_PREFS, Context.MODE_PRIVATE)
@@ -44,8 +44,8 @@ fun loadGameOptions(context: Context, gameName: String): GameOptions {
         .split("\n")
         .filter { it.isNotBlank() }
     val scorebezelAutofit = prefs.getBoolean(scorebezelAutofitKey(gameName), false)
-    val overlayOnTop = prefs.getBoolean(overlayOnTopKey(gameName), false)
-    return GameOptions(coverArt, bezelEnabled, arguments, scorebezelAutofit, overlayOnTop)
+    val overlayBezel = prefs.getBoolean(overlayBezelKey(gameName), false)
+    return GameOptions(coverArt, bezelEnabled, arguments, scorebezelAutofit, overlayBezel)
 }
 
 fun saveCoverArt(context: Context, gameName: String, coverArt: CoverArtType) {
@@ -69,10 +69,10 @@ fun saveScorebezelAutofit(context: Context, gameName: String, enabled: Boolean) 
         .apply()
 }
 
-fun saveOverlayOnTop(context: Context, gameName: String, enabled: Boolean) {
+fun saveOverlayBezel(context: Context, gameName: String, enabled: Boolean) {
     context.getSharedPreferences(GAME_OPTIONS_PREFS, Context.MODE_PRIVATE)
         .edit()
-        .putBoolean(overlayOnTopKey(gameName), enabled)
+        .putBoolean(overlayBezelKey(gameName), enabled)
         .apply()
 }
 

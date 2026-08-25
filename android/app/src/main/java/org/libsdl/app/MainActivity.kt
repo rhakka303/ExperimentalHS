@@ -445,8 +445,8 @@ private fun HypdroidApp(context: MainActivity) {
                     // (score/lives/skip/arrows) on top of custom bezel art
                     // instead of leaving it buried underneath, see
                     // docs/ANDROID_PATCHES.md for the source patch.
-                    if (options?.overlayOnTop == true) {
-                        args += "-overlay_on_top"
+                    if (options?.overlayBezel == true) {
+                        args += "-overlaybezel"
                     }
                     // #109 - off by default (hypseus's own existing
                     // screen-fill behavior). On: real letterbox/pillarbox
@@ -629,9 +629,9 @@ private fun HypdroidApp(context: MainActivity) {
                         saveScorebezelAutofit(context, game.name, enabled)
                         updateGameOptions(game.name, options.copy(scorebezelAutofit = enabled))
                     },
-                    onOverlayOnTopToggle = { enabled ->
-                        saveOverlayOnTop(context, game.name, enabled)
-                        updateGameOptions(game.name, options.copy(overlayOnTop = enabled))
+                    onOverlayBezelToggle = { enabled ->
+                        saveOverlayBezel(context, game.name, enabled)
+                        updateGameOptions(game.name, options.copy(overlayBezel = enabled))
                     },
                     onAddArgument = { arg ->
                         val updated = options.arguments + arg
