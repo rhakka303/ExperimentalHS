@@ -977,10 +977,10 @@ bool parse_cmd_line(int argc, char **argv)
                 printline("Fitting the scoreboard bezel to the real pillarbox bar space.");
                 video::set_scorebezel_autofit(true);
             }
-            else if (strcasecmp(s, "-overlay_on_top") == 0) {
+            else if (strcasecmp(s, "-overlaybezel") == 0) {
                 // Hypdroid Android port (#117)
                 printline("Rendering the Singe overlay on top of custom bezel art.");
-                video::set_overlay_on_top(true);
+                video::set_overlaybezel(true);
             }
             else if (strcasecmp(s, "-scorepanel") == 0) {
                 lair *game_lair_or_sa = dynamic_cast<lair *>(g_game);

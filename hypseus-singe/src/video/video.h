@@ -200,7 +200,7 @@ enum VideoState : uint64_t
     // hidden under any custom bezel) is unchanged unless this is explicitly
     // enabled. Unrelated to SCOREBOARD_BEZEL/the Daphne-native scoreboard
     // system, which is a completely separate rendering path.
-    OVERLAY_ON_TOP       = 1ull << 38,
+    OVERLAY_BEZEL        = 1ull << 38,
 };
 
 bool init_display();
@@ -262,7 +262,7 @@ void set_force_aspect_ratio(bool bEnabled);
 void set_ignore_aspect_ratio(bool bEnabled);
 void set_preserve_aspect_ratio(bool bEnabled); // Hypdroid Android port (#109)
 void set_scorebezel_autofit(bool bEnabled); // Hypdroid Android port (#111)
-void set_overlay_on_top(bool bEnabled); // Hypdroid Android port (#117)
+void set_overlaybezel(bool bEnabled); // Hypdroid Android port (#117)
 void set_scanlines(bool value);
 void set_shunt(uint8_t value);
 void set_alpha(uint8_t value);

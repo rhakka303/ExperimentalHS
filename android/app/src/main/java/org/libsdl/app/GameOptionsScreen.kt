@@ -47,7 +47,7 @@ fun GameOptionsScreen(
     onCoverArtChange: (CoverArtType) -> Unit,
     onBezelToggle: (Boolean) -> Unit,
     onScorebezelAutofitToggle: (Boolean) -> Unit,
-    onOverlayOnTopToggle: (Boolean) -> Unit,
+    onOverlayBezelToggle: (Boolean) -> Unit,
     onAddArgument: (String) -> Unit,
     onRemoveArgument: (String) -> Unit,
     onBack: () -> Unit,
@@ -145,20 +145,31 @@ fun GameOptionsScreen(
                     // top of custom bezel art, since it's otherwise buried
                     // under the bezel. Unrelated to Scorebezel Autofit above
                     // - that's the Daphne-native scoreboard system, this is
-                    // the general Singe overlay any game uses.
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Overlay On Top", style = MaterialTheme.typography.titleMedium)
-                            Text(
-                                if (options.overlayOnTop) "On" else "Off",
-                                style = MaterialTheme.typography.bodyMedium,
+                    // the general Singe overlay any game uses. Only
+                    // shown/meaningful while Bezel itself is on (#124) - same
+                    // conditional-visibility pattern as Background Art's own
+                    // Default Art sub-toggle. There's nothing to draw the
+                    // overlay on top of otherwise, and doing so anyway
+                    // produced visible ghosting on real hardware.
+                    if (options.bezelEnabled) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Overlay Bezel", style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    if (options.overlayBezel) "On" else "Off",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                                Text(
+                                    "Makes overlays a priority",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                            HypdroidSwitch(
+                                checked = options.overlayBezel,
+                                onCheckedChange = onOverlayBezelToggle,
                             )
                         }
-                        HypdroidSwitch(
-                            checked = options.overlayOnTop,
-                            onCheckedChange = onOverlayOnTopToggle,
-                        )
                     }
                 }
             }
