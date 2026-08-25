@@ -19,7 +19,7 @@ cd android
 
 Output:
 
-```
+```text
 app/build/outputs/apk/handheld/release/app-handheld-release.apk
 app/build/outputs/apk/full/release/app-full-release.apk
 ```
