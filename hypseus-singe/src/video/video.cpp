@@ -2601,15 +2601,24 @@ static void vid_render_bezels()
         VIDEO_SET(BEZEL_LOAD);
     }
 
+    // Hypdroid Android port (#131): with PRESERVE_ASPECT on, the video
+    // itself only occupies g_scaling_rect (centered, letterboxed/
+    // pillarboxed to the video's real ratio), not the full screen. Match
+    // the bezel to that same rect instead of stretching it across
+    // g_logical_rect, so a bezel sized to the video's own resolution lines
+    // up with it exactly instead of being distorted to the screen's ratio.
+    SDL_Rect bezel_rect = VIDEO_HAS(PRESERVE_ASPECT) ?
+        g_scaling_rect : SDL_Rect{0, 0, g_logical_rect.w, g_logical_rect.h};
+
     if (VIDEO_HAS(BEZEL_REVERSE))
     {
         vid_render_texture(g_scoreboard_texture, g_scoreboard_bezel_rect);
         vid_render_texture(g_aux_texture, g_aux_rect);
-        vid_render_texture(g_bezel_texture, SDL_Rect{0, 0, g_logical_rect.w, g_logical_rect.h});
+        vid_render_texture(g_bezel_texture, bezel_rect);
     }
     else
     {
-        vid_render_texture(g_bezel_texture, SDL_Rect{0, 0, g_logical_rect.w, g_logical_rect.h});
+        vid_render_texture(g_bezel_texture, bezel_rect);
         vid_render_texture(g_aux_texture, g_aux_rect);
         vid_render_texture(g_scoreboard_texture, g_scoreboard_bezel_rect);
     }
