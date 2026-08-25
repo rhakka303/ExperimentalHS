@@ -406,3 +406,13 @@ Enabling the per-game Bezel toggle (#31) with a real matching bezel PNG present 
 - Daphne-native: real bezel art (cabinet-style side panels, scoreboard) rendered correctly around real gameplay video, no crash.
 - Zipped Singe: real bezel art rendered correctly, no crash.
 - Unzipped Singe-script: real bezel art rendered correctly, no crash.
+
+## Fix: `sdl3-mixer` built without any MP3 decoder (#120)
+
+Any Singe game using MP3 for music failed to load it. Confirmed via real device log (Samsung Galaxy Tab S7+): `SINGE: Could not load singe/<game>/CD/track01.mp3 as music data: Parameter 'audio' is invalid`, immediately followed by the game's session ending. The MP3 file itself was verified valid (real MPEG sync bytes, valid Xing VBR header), ruling out a bad-asset explanation.
+
+Root cause, traced through the actual vcpkg port: `vcpkg/ports/sdl3-mixer/portfile.cmake` unconditionally passes `-DSDLMIXER_MP3_DRMP3=OFF` (SDL_mixer's lightweight bundled MP3 decoder, disabled regardless of feature selection), and the only remaining MP3 path, `mpg123`, is gated behind an opt-in vcpkg feature. Confirmed via `vcpkg/installed/vcpkg/status` that this project's original `vcpkg install sdl3-mixer:arm64-android` never requested it, same class of gap as Bug 3 above (`sdl3-image` missing the `[png]` feature).
+
+**Fix:** `vcpkg install "sdl3-mixer[mpg123]:arm64-android" --recurse` (~5 min rebuild, also builds `mpg123:arm64-android` itself for the first time), then a normal Gradle build relinks `libmain.so` against it. **This vcpkg feature selection is not captured anywhere except this doc, same caveat as Bug 3 - if `vcpkg/installed` or the binary cache is ever wiped, re-run the `[mpg123]` install before rebuilding.**
+
+Confirmed on the physical Samsung Galaxy Tab S7+ across two different real games using MP3 music: both load and play cleanly with no audio error, where both previously failed identically before the fix.
