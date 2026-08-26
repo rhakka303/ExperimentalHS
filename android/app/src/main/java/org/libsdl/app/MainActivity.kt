@@ -185,6 +185,9 @@ private sealed class Screen {
     object ControllerConfig : Screen()
     object TouchControls : Screen()
     data class GameOptionsFor(val gameName: String) : Screen()
+    // #135 - pushed from GameOptionsFor's "Game Hack" card, backs to that
+    // same game's options rather than all the way to Home.
+    data class GameHackFor(val gameName: String) : Screen()
 }
 
 // Not private - #47's global Cover Art prefs (GameOptions.kt) live in this
@@ -643,7 +646,19 @@ private fun HypdroidApp(context: MainActivity) {
                         saveArguments(context, game.name, updated)
                         updateGameOptions(game.name, options.copy(arguments = updated))
                     },
+                    onOpenGameHack = { currentScreen = Screen.GameHackFor(game.name) },
                     onBack = { currentScreen = Screen.Home },
+                )
+            }
+        }
+        is Screen.GameHackFor -> {
+            val game = games.find { it.name == screen.gameName }
+            if (game == null) {
+                LaunchedEffect(Unit) { currentScreen = Screen.Home }
+            } else {
+                GameHackScreen(
+                    game = game,
+                    onBack = { currentScreen = Screen.GameOptionsFor(game.name) },
                 )
             }
         }

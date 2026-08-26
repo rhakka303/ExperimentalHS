@@ -50,6 +50,7 @@ fun GameOptionsScreen(
     onOverlayBezelToggle: (Boolean) -> Unit,
     onAddArgument: (String) -> Unit,
     onRemoveArgument: (String) -> Unit,
+    onOpenGameHack: () -> Unit,
     onBack: () -> Unit,
 ) {
     BackHandler(onBack = onBack)
@@ -75,31 +76,51 @@ fun GameOptionsScreen(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            OutlinedCard(modifier = Modifier.weight(1f)) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Text("Cover Art", style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        (options.coverArt ?: CoverArtType.BOX).name,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    // #47 - while the Settings "Global Cover Art" override is
-                    // on, every game shows that single chosen type
-                    // regardless of what's saved here, so changing it here
-                    // would have no visible effect. Greyed out rather than
-                    // hidden - the per-game choice underneath is still
-                    // there, just not applied, and picking it back up when
-                    // Global is turned off shouldn't require re-entering it.
-                    if (globalCoverArtEnabled) {
+            Column(modifier = Modifier.weight(1f)) {
+                OutlinedCard {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "Cover Art",
+                                style = MaterialTheme.typography.titleMedium,
+                                modifier = Modifier.weight(1f),
+                            )
+                            HypdroidButton(
+                                onClick = { showCoverArtPicker = true },
+                                enabled = !globalCoverArtEnabled,
+                            ) { Text("Change") }
+                        }
                         Text(
-                            "Controlled by Settings > Global Cover Art",
-                            style = MaterialTheme.typography.bodySmall,
+                            (options.coverArt ?: CoverArtType.BOX).name,
+                            style = MaterialTheme.typography.bodyMedium,
                         )
+                        // #47 - while the Settings "Global Cover Art" override is
+                        // on, every game shows that single chosen type
+                        // regardless of what's saved here, so changing it here
+                        // would have no visible effect. Greyed out rather than
+                        // hidden - the per-game choice underneath is still
+                        // there, just not applied, and picking it back up when
+                        // Global is turned off shouldn't require re-entering it.
+                        if (globalCoverArtEnabled) {
+                            Text(
+                                "Controlled by Settings > Global Cover Art",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
                     }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    HypdroidButton(
-                        onClick = { showCoverArtPicker = true },
-                        enabled = !globalCoverArtEnabled,
-                    ) { Text("Change") }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // #135 - starts blank, same push-navigation pattern as
+                // Settings > Controls. What goes on the Game Hack page is a
+                // separate, not-yet-decided follow-up - this just wires up
+                // the card + screen.
+                OutlinedCard(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenGameHack)) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text("Game Hacks", style = MaterialTheme.typography.titleMedium)
+                        Text("Custom Game fixes", style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             }
 
