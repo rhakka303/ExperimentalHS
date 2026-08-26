@@ -982,6 +982,11 @@ bool parse_cmd_line(int argc, char **argv)
                 printline("Rendering the Singe overlay on top of custom bezel art.");
                 video::set_overlaybezel(true);
             }
+            else if (strcasecmp(s, "-aspectbezelfix") == 0) {
+                // Hypdroid Android port (#137)
+                printline("Fitting the bezel to the aspect-corrected video rect.");
+                video::set_aspectbezelfix(true);
+            }
             else if (strcasecmp(s, "-scorepanel") == 0) {
                 lair *game_lair_or_sa = dynamic_cast<lair *>(g_game);
                 thayers *game_thayers = dynamic_cast<thayers *>(g_game);

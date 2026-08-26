@@ -1457,6 +1457,7 @@ void set_ignore_aspect_ratio(bool value) { VIDEO_ASSIGN(IGNORE_ASPECT, value); }
 void set_preserve_aspect_ratio(bool value) { VIDEO_ASSIGN(PRESERVE_ASPECT, value); } // Hypdroid Android port (#109)
 void set_scorebezel_autofit(bool value) { VIDEO_ASSIGN(SCOREBOARD_AUTOFIT, value); } // Hypdroid Android port (#111)
 void set_overlaybezel(bool value) { VIDEO_ASSIGN(OVERLAY_BEZEL, value); } // Hypdroid Android port (#117)
+void set_aspectbezelfix(bool value) { VIDEO_ASSIGN(ASPECT_BEZEL_FIX, value); } // Hypdroid Android port (#137)
 void set_aspect_ratio(int fRatio) { g_aspect_ratio = fRatio; }
 void set_detected_height(int pHeight) { g_probe_height = pHeight; }
 void set_detected_width(int pWidth) { g_probe_width = pWidth; }
@@ -2601,15 +2602,23 @@ static void vid_render_bezels()
         VIDEO_SET(BEZEL_LOAD);
     }
 
+    // Hypdroid Android port (#137): explicit per-game opt-in (unlike #131's
+    // reverted blanket PRESERVE_ASPECT-tied version, see ASPECT_BEZEL_FIX's
+    // doc comment in video.h) - only bezels that ask for this via
+    // -aspectbezelfix shrink to the video's own rect. Everything else keeps
+    // today's full-screen draw.
+    SDL_Rect bezel_rect = (VIDEO_HAS(PRESERVE_ASPECT) && VIDEO_HAS(ASPECT_BEZEL_FIX)) ?
+        g_scaling_rect : SDL_Rect{0, 0, g_logical_rect.w, g_logical_rect.h};
+
     if (VIDEO_HAS(BEZEL_REVERSE))
     {
         vid_render_texture(g_scoreboard_texture, g_scoreboard_bezel_rect);
         vid_render_texture(g_aux_texture, g_aux_rect);
-        vid_render_texture(g_bezel_texture, SDL_Rect{0, 0, g_logical_rect.w, g_logical_rect.h});
+        vid_render_texture(g_bezel_texture, bezel_rect);
     }
     else
     {
-        vid_render_texture(g_bezel_texture, SDL_Rect{0, 0, g_logical_rect.w, g_logical_rect.h});
+        vid_render_texture(g_bezel_texture, bezel_rect);
         vid_render_texture(g_aux_texture, g_aux_rect);
         vid_render_texture(g_scoreboard_texture, g_scoreboard_bezel_rect);
     }

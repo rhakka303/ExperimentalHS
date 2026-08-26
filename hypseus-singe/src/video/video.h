@@ -201,6 +201,18 @@ enum VideoState : uint64_t
     // enabled. Unrelated to SCOREBOARD_BEZEL/the Daphne-native scoreboard
     // system, which is a completely separate rendering path.
     OVERLAY_BEZEL        = 1ull << 38,
+
+    // Hypdroid Android port (#137): opt-in per-game fix for a bezel sized to
+    // match the video's own resolution (e.g. a 1920x1080 bezel for a
+    // 1920x1080 video) - draws the bezel into g_scaling_rect (the video's
+    // own centered/aspect-corrected rect) instead of the full screen, same
+    // logic #131 tried as a blanket PRESERVE_ASPECT-tied change and had to
+    // be reverted (#133) since it broke full-screen-over-video bezel
+    // designs. This time gated behind its own independent flag, so it's an
+    // explicit per-game choice instead of an automatic one - off by
+    // default, existing full-screen bezel behavior unchanged unless this
+    // AND PRESERVE_ASPECT are both explicitly enabled.
+    ASPECT_BEZEL_FIX     = 1ull << 39,
 };
 
 bool init_display();
@@ -263,6 +275,7 @@ void set_ignore_aspect_ratio(bool bEnabled);
 void set_preserve_aspect_ratio(bool bEnabled); // Hypdroid Android port (#109)
 void set_scorebezel_autofit(bool bEnabled); // Hypdroid Android port (#111)
 void set_overlaybezel(bool bEnabled); // Hypdroid Android port (#117)
+void set_aspectbezelfix(bool bEnabled); // Hypdroid Android port (#137)
 void set_scanlines(bool value);
 void set_shunt(uint8_t value);
 void set_alpha(uint8_t value);

@@ -451,6 +451,12 @@ private fun HypdroidApp(context: MainActivity) {
                     if (options?.overlayBezel == true) {
                         args += "-overlaybezel"
                     }
+                    // #137 - per-game opt-in, only meaningful alongside
+                    // Preserve Aspect Ratio, see docs/ANDROID_PATCHES.md for
+                    // the source patch.
+                    if (options?.aspectBezelFix == true) {
+                        args += "-aspectbezelfix"
+                    }
                     // #109 - off by default (hypseus's own existing
                     // screen-fill behavior). On: real letterbox/pillarbox
                     // bars, see docs/ANDROID_PATCHES.md for the source patch.
@@ -656,8 +662,14 @@ private fun HypdroidApp(context: MainActivity) {
             if (game == null) {
                 LaunchedEffect(Unit) { currentScreen = Screen.Home }
             } else {
+                val options = gameOptionsMap[game.name] ?: GameOptions(null, false, emptyList())
                 GameHackScreen(
                     game = game,
+                    options = options,
+                    onAspectBezelFixToggle = { enabled ->
+                        saveAspectBezelFix(context, game.name, enabled)
+                        updateGameOptions(game.name, options.copy(aspectBezelFix = enabled))
+                    },
                     onBack = { currentScreen = Screen.GameOptionsFor(game.name) },
                 )
             }
