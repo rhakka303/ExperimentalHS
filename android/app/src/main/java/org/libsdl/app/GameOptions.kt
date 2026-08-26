@@ -20,6 +20,13 @@ data class GameOptions(
     // since it's otherwise buried under the bezel. Unrelated to
     // scorebezelAutofit/the Daphne-native scoreboard system. Off by default.
     val overlayBezel: Boolean = false,
+    // #137 - per-game opt-in for a bezel sized to match the video's own
+    // resolution (e.g. a 1920x1080 bezel for a 1920x1080 video): fits the
+    // bezel to the video's aspect-corrected rect instead of the full
+    // screen, only while Preserve Aspect Ratio (a separate, global setting)
+    // is also on. Off by default - existing full-screen bezel behavior is
+    // unchanged unless explicitly enabled per-game.
+    val aspectBezelFix: Boolean = false,
 )
 
 private const val GAME_OPTIONS_PREFS = "hypdroid_game_options"
@@ -29,6 +36,7 @@ private fun bezelKey(gameName: String) = "bezel_$gameName"
 private fun argumentsKey(gameName: String) = "args_$gameName"
 private fun scorebezelAutofitKey(gameName: String) = "scorebezel_autofit_$gameName"
 private fun overlayBezelKey(gameName: String) = "overlaybezel_$gameName"
+private fun aspectBezelFixKey(gameName: String) = "aspectbezelfix_$gameName"
 
 fun loadGameOptions(context: Context, gameName: String): GameOptions {
     val prefs = context.getSharedPreferences(GAME_OPTIONS_PREFS, Context.MODE_PRIVATE)
@@ -45,7 +53,8 @@ fun loadGameOptions(context: Context, gameName: String): GameOptions {
         .filter { it.isNotBlank() }
     val scorebezelAutofit = prefs.getBoolean(scorebezelAutofitKey(gameName), false)
     val overlayBezel = prefs.getBoolean(overlayBezelKey(gameName), false)
-    return GameOptions(coverArt, bezelEnabled, arguments, scorebezelAutofit, overlayBezel)
+    val aspectBezelFix = prefs.getBoolean(aspectBezelFixKey(gameName), false)
+    return GameOptions(coverArt, bezelEnabled, arguments, scorebezelAutofit, overlayBezel, aspectBezelFix)
 }
 
 fun saveCoverArt(context: Context, gameName: String, coverArt: CoverArtType) {
@@ -73,6 +82,13 @@ fun saveOverlayBezel(context: Context, gameName: String, enabled: Boolean) {
     context.getSharedPreferences(GAME_OPTIONS_PREFS, Context.MODE_PRIVATE)
         .edit()
         .putBoolean(overlayBezelKey(gameName), enabled)
+        .apply()
+}
+
+fun saveAspectBezelFix(context: Context, gameName: String, enabled: Boolean) {
+    context.getSharedPreferences(GAME_OPTIONS_PREFS, Context.MODE_PRIVATE)
+        .edit()
+        .putBoolean(aspectBezelFixKey(gameName), enabled)
         .apply()
 }
 
