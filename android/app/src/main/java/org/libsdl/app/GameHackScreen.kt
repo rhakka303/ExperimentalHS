@@ -59,7 +59,7 @@ fun GameHackScreen(
                         Column(modifier = Modifier.weight(1f)) {
                             Text("Aspect Ratio Bezel Fix", style = MaterialTheme.typography.titleMedium)
                             Text(
-                                "Matches this game's bezel to the aspect-corrected video size",
+                                "Matches this game's bezel to the video - only confirmed on one gun game so far",
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         }
