@@ -103,6 +103,64 @@ class MainActivity : ComponentActivity() {
     var gamepadCaptureListener: ((token: String) -> Unit)? = null
     var gamepadCaptureListeningForAxis: Boolean = false
 
+    // #116 - external launch request (e.g. Daijishō, via a .dpt template's
+    // `-e gamename {tags.gamename}`). Compose state, not a plain var -
+    // onNewIntent() can update this while the Activity is already running
+    // and composed, and HypdroidApp's LaunchedEffect needs to react to that.
+    var pendingGameName by mutableStateOf<String?>(null)
+
+    // #116 - set right before starting a game that came from an external
+    // launch request, so onResume() knows this session should hand control
+    // back to whatever launched us (Daijishō) instead of showing the
+    // dashboard once the game exits.
+    private var launchedExternally = false
+
+    fun markLaunchedExternally() {
+        launchedExternally = true
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        // #116 - requires launchMode="singleTop" in the manifest: without
+        // it, a second external launch while Hypdroid is already open would
+        // go through onCreate on a fresh instance instead, and this
+        // wouldn't fire at all.
+        setIntent(intent)
+        pendingGameName = intent.getStringExtra(EXTRA_GAME_NAME)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // #116 - fires when returning here after the launched game exits.
+        // Only acts on a session that was actually started externally -
+        // every other onResume (first launch, coming back from a normal
+        // in-app game launch) leaves this false and is a no-op, since that
+        // path still wants the dashboard alive and browsable.
+        if (launchedExternally) {
+            launchedExternally = false
+            // Confirmed on-device: plain finish() hands the foreground back
+            // to Daijishō and the process does die (verified via `ps`), but
+            // it leaves a stale card sitting in Android's recent-apps
+            // switcher, since that list doesn't know to clean itself up
+            // just because the process behind it exited. finishAndRemoveTask()
+            // is the actual API for "close this and forget it ever ran" -
+            // removes the task from Recents too, not just the process.
+            finishAndRemoveTask()
+            // Still kill explicitly rather than relying on the task removal
+            // alone - matches HypseusActivity.onDestroy()'s existing pattern
+            // for the game's own :hypseus process, so an externally launched
+            // session leaves nothing behind either way.
+            android.os.Process.killProcess(android.os.Process.myPid())
+        }
+    }
+
+    companion object {
+        // #116 - matches the tag name used in the .dpt templates
+        // (`[gamename] <name>`) and the Daijishō Player's amStartArguments
+        // (`-e gamename {tags.gamename}`).
+        const val EXTRA_GAME_NAME = "gamename"
+    }
+
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
         val listener = gamepadCaptureListener
         if (listener != null) {
@@ -129,6 +187,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingGameName = intent?.getStringExtra(EXTRA_GAME_NAME)
         setContent {
             HypdroidTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
@@ -311,6 +370,52 @@ private fun HypdroidApp(context: MainActivity) {
         }
     }
 
+    // #116 - extracted from the tile-tap onPlay callback so an externally-
+    // triggered launch (Daijishō) goes through the exact same path -
+    // per-game flags, touch-overlay Intent extras, everything - instead of
+    // a second, easy-to-drift-out-of-sync copy.
+    fun launchGame(game: Game) {
+        val homeDir = gameFolderPath ?: return
+        val args = buildLaunchArgs(game, homeDir).toMutableList()
+        val options = gameOptionsMap[game.name]
+        if (options?.bezelEnabled == true) {
+            args += bezelLaunchArgs(homeDir, game.name)
+        }
+        if (options?.scorebezelAutofit == true) {
+            args += "-scorebezel_autofit"
+        }
+        if (options?.overlayBezel == true) {
+            args += "-overlaybezel"
+        }
+        if (options?.aspectBezelFix == true) {
+            args += "-aspectbezelfix"
+        }
+        if (preserveAspectRatioEnabled) {
+            args += "-preserve_aspect_ratio"
+        }
+        options?.arguments?.forEach { entry ->
+            args += entry.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+        }
+        val intent = Intent(context, HypseusActivity::class.java)
+            .putExtra(HypseusActivity.EXTRA_ARGS, args.toTypedArray())
+            .putExtra(HypseusActivity.EXTRA_TOUCH_ENABLED, touchControlsEnabled)
+            .putExtra(HypseusActivity.EXTRA_TOUCH_STICK_MODE, touchControlsStickMode)
+            .putExtra(HypseusActivity.EXTRA_TOUCH_OPACITY, touchControlsOpacity)
+        context.startActivity(intent)
+    }
+
+    // #116 - an external launch request (Daijishō) arrives before the game
+    // list is necessarily scanned yet (scanning depends on the persisted
+    // folder LaunchedEffect below), so this re-runs on every change to
+    // either side until both are ready, then fires exactly once.
+    LaunchedEffect(context.pendingGameName, games) {
+        val name = context.pendingGameName ?: return@LaunchedEffect
+        val match = games.find { it.name == name } ?: return@LaunchedEffect
+        context.pendingGameName = null
+        context.markLaunchedExternally()
+        launchGame(match)
+    }
+
     // #88 - All Files Access used to be requested automatically on every
     // launch, a full Settings-screen redirect with zero in-app explanation
     // first - confirmed confusing. Now an explicit action from
@@ -429,57 +534,7 @@ private fun HypdroidApp(context: MainActivity) {
             onChooseFolder = onChooseGameFolder,
             onOpenSettings = { currentScreen = Screen.Settings },
             onOpenOptions = { game -> currentScreen = Screen.GameOptionsFor(game.name) },
-            onPlay = { game ->
-                val homeDir = gameFolderPath
-                if (homeDir != null) {
-                    val args = buildLaunchArgs(game, homeDir).toMutableList()
-                    val options = gameOptionsMap[game.name]
-                    if (options?.bezelEnabled == true) {
-                        args += bezelLaunchArgs(homeDir, game.name)
-                    }
-                    // #111 - off by default (hypseus's own existing
-                    // fixed-ratio scoreboard bezel sizing). On: fits the
-                    // scoreboard bezel to the real black-bar space, see
-                    // docs/ANDROID_PATCHES.md for the source patch.
-                    if (options?.scorebezelAutofit == true) {
-                        args += "-scorebezel_autofit"
-                    }
-                    // #117 - off by default. On: redraws the Singe overlay
-                    // (score/lives/skip/arrows) on top of custom bezel art
-                    // instead of leaving it buried underneath, see
-                    // docs/ANDROID_PATCHES.md for the source patch.
-                    if (options?.overlayBezel == true) {
-                        args += "-overlaybezel"
-                    }
-                    // #137 - per-game opt-in, only meaningful alongside
-                    // Preserve Aspect Ratio, see docs/ANDROID_PATCHES.md for
-                    // the source patch.
-                    if (options?.aspectBezelFix == true) {
-                        args += "-aspectbezelfix"
-                    }
-                    // #109 - off by default (hypseus's own existing
-                    // screen-fill behavior). On: real letterbox/pillarbox
-                    // bars, see docs/ANDROID_PATCHES.md for the source patch.
-                    if (preserveAspectRatioEnabled) {
-                        args += "-preserve_aspect_ratio"
-                    }
-                    options?.arguments?.forEach { entry ->
-                        args += entry.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
-                    }
-                    // #85 - the touch settings ride along on the Intent
-                    // rather than being read on the other side:
-                    // HypseusActivity runs in its own `:hypseus` process
-                    // now, where SharedPreferences aren't a dependable
-                    // channel (see TouchOverlay.attach()). These are the
-                    // live Compose values, already current.
-                    val intent = Intent(context, HypseusActivity::class.java)
-                        .putExtra(HypseusActivity.EXTRA_ARGS, args.toTypedArray())
-                        .putExtra(HypseusActivity.EXTRA_TOUCH_ENABLED, touchControlsEnabled)
-                        .putExtra(HypseusActivity.EXTRA_TOUCH_STICK_MODE, touchControlsStickMode)
-                        .putExtra(HypseusActivity.EXTRA_TOUCH_OPACITY, touchControlsOpacity)
-                    context.startActivity(intent)
-                }
-            },
+            onPlay = { game -> launchGame(game) },
         )
         Screen.Settings -> SettingsScreen(
             onOpenManageGameFolder = { currentScreen = Screen.ManageGameFolder },
