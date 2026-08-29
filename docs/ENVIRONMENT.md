@@ -31,6 +31,26 @@ Verify after setting (new terminal session required — these don't propagate to
 
 The second command should report an NDK-based clang build and list `aarch64-linux-android*-clang` wrapper binaries alongside it in the same `bin` directory — those are the actual `arm64-v8a` cross-compilers this project targets.
 
+## `android/local.properties` (per-machine, gitignored)
+
+The native build needs to locate two tools whose install location varies per machine. Both are resolved at Gradle configure time (see `android/app/build.gradle`), so no absolute paths live in the tracked build config (#150).
+
+| Key | Purpose | If omitted |
+|---|---|---|
+| `sdk.dir` | Android SDK root. Android's own standard mechanism; Android Studio writes this automatically. The NDK toolchain path is derived from it plus the `ndkVersion` declared in `build.gradle`. | Falls back to `ANDROID_HOME`, then `ANDROID_SDK_ROOT`. If none resolve, the build fails with a message naming exactly what to set. |
+| `pkgconfig.exe` | `pkg-config` executable, needed by vcpkg's toolchain during configure. | Falls back to `pkg-config` on `PATH`. |
+
+Use forward slashes for `pkgconfig.exe` — `.properties` files treat a single backslash as an escape character, so `C:\Users\...` silently loses its separators (`sdk.dir`, written by Android Studio, escapes them as `\\` instead).
+
+Example:
+
+```properties
+sdk.dir=C\:\\Users\\<you>\\AppData\\Local\\Android\\Sdk
+pkgconfig.exe=C:/msys64/usr/bin/pkg-config.exe
+```
+
+Note the vcpkg toolchain is *not* configurable here — it's resolved relative to the repo root, since `vcpkg/` is a submodule at a known location.
+
 ## Notes
 
 - `sdkmanager` reports itself as deprecated in favor of a newer `android` CLI tool as of this NDK/SDK version. Still functional; noted here in case a future session hits removal.
