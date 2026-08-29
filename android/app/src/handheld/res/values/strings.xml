@@ -3,5 +3,9 @@
          Pocket 5 / gamepad-first handheld build. Shares the same
          laserdisc-circle launcher icon (mipmap/ic_launcher in src/main).
          No behavior differences from src/main yet - name/package ID only. -->
-    <string name="app_name">Hypdroid Handheld</string>
+    <!-- ExperimentalHS: deliberately distinct from Hypdroid's own
+         "Hypdroid Handheld" label, so an experimental build is
+         identifiable at a glance in the app drawer when both are
+         installed on the same test device. -->
+    <string name="app_name">ExpHS Handheld</string>
 </resources>

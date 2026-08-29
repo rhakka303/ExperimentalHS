@@ -24,7 +24,14 @@ android {
         // and namespace are independent in Android, and a full source-tree
         // package rename was scoped out as unnecessary churn for a change
         // that's otherwise invisible to any user.
-        applicationId "com.hypdroid.app"
+        // ExperimentalHS deliberately uses its own applicationId, NOT
+        // Hypdroid's "com.hypdroid.app". This repo exists to attempt
+        // invasive work (decode-path/NEON experiments) that could produce
+        // a broken build - if it shared Hypdroid's package ID, installing
+        // an experimental test build would silently overwrite the real
+        // app's install on the same device. Distinct IDs let both sit
+        // side by side on the test hardware.
+        applicationId "com.hypdroid.experimental"
         versionCode 3
         versionName "3.0"
         externalNativeBuild {
@@ -40,7 +47,7 @@ android {
                 // vcpkg's arm64-android packages instead of failing outright.
                 arguments "-DANDROID_PLATFORM=android-28",
                     "-DANDROID_STL=c++_static",
-                    "-DCMAKE_TOOLCHAIN_FILE=D:/Claude Code/Hypdroid/vcpkg/scripts/buildsystems/vcpkg.cmake",
+                    "-DCMAKE_TOOLCHAIN_FILE=D:/Claude Code/ExperimentalHS/vcpkg/scripts/buildsystems/vcpkg.cmake",
                     "-DVCPKG_TARGET_TRIPLET=arm64-android",
                     "-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=C:/Users/rhakk/AppData/Local/Android/Sdk/ndk/30.0.15729638/build/cmake/android.toolchain.cmake",
                     "-DPKG_CONFIG_EXECUTABLE=C:/Users/rhakk/msys2-buildtools/usr/bin/pkg-config.exe"
