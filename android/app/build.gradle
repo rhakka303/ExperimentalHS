@@ -16,7 +16,15 @@ android {
         // its assumed API surface is a guaranteed subset of API 30+.
         minSdkVersion 30
         targetSdkVersion 35
-        applicationId "org.libsdl.app"
+        // #147 - "org.libsdl.app" was the SDL3 Android Studio project
+        // template's own default applicationId, never renamed since. Real
+        // Hypdroid branding as of v3.0. Deliberately left `namespace`
+        // (build.gradle, above) and every source file's actual
+        // `package org.libsdl.app` declaration untouched - applicationId
+        // and namespace are independent in Android, and a full source-tree
+        // package rename was scoped out as unnecessary churn for a change
+        // that's otherwise invisible to any user.
+        applicationId "com.hypdroid.app"
         versionCode 3
         versionName "3.0"
         externalNativeBuild {
