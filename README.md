@@ -9,6 +9,9 @@ A standalone Android port of [Hypseus Singe](https://github.com/DirtBagXon/hypse
 
 **Status:** actively in development, running real games on real hardware. See the Releases page for the latest APK downloads.
 
+> [!IMPORTANT]
+> **Upgrading from v1 or v2?** Version 1 and Version 2 are discontinued and will not receive any further updates. Version 3 uses a new package name (real Hypdroid branding, replacing a placeholder left over from the app's original template), so it installs as a separate app rather than updating your existing one. Please uninstall v1/v2 and install v3 fresh. All future updates will be released under v3.
+
 ## Getting Started
 
 **1. Pick your APK.** Download the one matching your device from the Releases page:
@@ -94,6 +97,17 @@ Also double-check your device's own Settings: go to Settings > Apps > All files 
 ## Status / roadmap
 
 Core emulation, game scanning/launching, the visual gallery, Settings, and controls (gamepad + touch) are all working and tested on real hardware across both flavors. Ongoing work is polish, UX gaps, and further real-device testing.
+
+## Disclaimer
+
+This was made for my own ability to play Hypseus Singe on my Android devices. I'm sharing it with the public, always free, in case it's useful to others.
+
+This project does not contain, bundle, or distribute any ROMs, laserdisc video dumps, or artwork. You provide your own game files.
+
+This software is intended for educational purposes only.
+
+> [!WARNING]
+> This software is provided as-is, with no warranty. Use at your own risk, I'm not responsible for any damage, data loss, or issues that result from installing or using this APK.
 
 ## License
 
