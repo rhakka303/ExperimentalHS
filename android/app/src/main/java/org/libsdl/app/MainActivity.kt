@@ -38,7 +38,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -840,10 +839,10 @@ private fun HomeScreen(
                 // scrim exists to make possible. Left at the default theme
                 // color the rest of the time, matching the plain background.
                 val iconTint = if (backgroundFile != null) Color.White else LocalContentColor.current
-                IconButton(onClick = onChooseFolder) {
+                HypdroidIconButton(onClick = onChooseFolder) {
                     Icon(Icons.Filled.Add, contentDescription = "Choose game folder", tint = iconTint)
                 }
-                IconButton(onClick = onOpenSettings) {
+                HypdroidIconButton(onClick = onOpenSettings) {
                     Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = iconTint)
                 }
             }

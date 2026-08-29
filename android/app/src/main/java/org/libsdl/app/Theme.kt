@@ -2,10 +2,12 @@ package org.libsdl.app
 
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -134,6 +136,39 @@ fun HypdroidOutlinedButton(
             .then(
                 if (isFocused) {
                     Modifier.border(3.dp, HypdroidGreenAccent, ButtonDefaults.shape)
+                } else {
+                    Modifier
+                },
+            ),
+        content = { content() },
+    )
+}
+
+/**
+ * #142 - same focus-ring treatment as HypdroidButton, for IconButton.
+ * Confirmed on the Powkiddy X55 (GammaOS): D-pad-focusing the dashboard's
+ * "+"/gear icons showed only a faint grey circle, the plain Material3
+ * IconButton default - these two were built before #92's green focus-ring
+ * convention existed elsewhere and got missed. Ring is circular
+ * (CircleShape) to match IconButton's own circular ripple/touch target,
+ * unlike the pill/rounded shapes the other wrappers use.
+ */
+@Composable
+fun HypdroidIconButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    content: @Composable () -> Unit,
+) {
+    var isFocused by remember { mutableStateOf(false) }
+    IconButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier
+            .onFocusChanged { isFocused = it.isFocused }
+            .then(
+                if (isFocused) {
+                    Modifier.border(3.dp, HypdroidGreenAccent, CircleShape)
                 } else {
                     Modifier
                 },
