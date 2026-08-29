@@ -56,6 +56,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
@@ -248,6 +249,11 @@ private sealed class Screen {
     data class GameHackFor(val gameName: String) : Screen()
 }
 
+// #144 - the dashboard's three focusable top-level elements, so
+// HomeScreen can restore D-pad focus to whichever one it was on before
+// navigating away, instead of the carousel always grabbing it back.
+private enum class DashboardFocusTarget { ChooseFolder, Settings, Carousel }
+
 // Not private - #47's global Cover Art prefs (GameOptions.kt) live in this
 // same prefs file, alongside the folder paths below.
 const val PREFS_NAME = "hypdroid_prefs"
@@ -304,6 +310,13 @@ private fun HypdroidApp(context: MainActivity) {
     // and backed out of. Hoisting the current page here, one level up in a
     // composable that survives screen navigation, lets it be restored.
     var carouselPage by remember { mutableStateOf(0) }
+    // #144 - same hoisting reasoning as carouselPage above, but for *which*
+    // top-level dashboard element (an icon vs. the carousel itself) last had
+    // D-pad focus. Without this, GameCarousel's own unconditional
+    // focus-request effect grabbed focus back to itself on every return to
+    // Screen.Home, even if the gear icon (not the carousel) was what had
+    // focus before navigating into Settings.
+    var dashboardFocus by remember { mutableStateOf(DashboardFocusTarget.Carousel) }
     // #47 - Global Cover Art override (Settings). Plain synchronous
     // SharedPreferences reads, unlike the folder pickers above, so no
     // LaunchedEffect needed - the initial remember{} read is enough.
@@ -530,6 +543,8 @@ private fun HypdroidApp(context: MainActivity) {
             defaultArtEnabled = defaultArtEnabled,
             carouselPage = carouselPage,
             onCarouselPageChanged = { carouselPage = it },
+            dashboardFocus = dashboardFocus,
+            onDashboardFocusChanged = { dashboardFocus = it },
             onChooseFolder = onChooseGameFolder,
             onOpenSettings = { currentScreen = Screen.Settings },
             onOpenOptions = { game -> currentScreen = Screen.GameOptionsFor(game.name) },
@@ -744,11 +759,31 @@ private fun HomeScreen(
     defaultArtEnabled: Boolean,
     carouselPage: Int,
     onCarouselPageChanged: (Int) -> Unit,
+    dashboardFocus: DashboardFocusTarget,
+    onDashboardFocusChanged: (DashboardFocusTarget) -> Unit,
     onChooseFolder: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenOptions: (Game) -> Unit,
     onPlay: (Game) -> Unit,
 ) {
+    // #144 - one FocusRequester per top-level dashboard element, hoisted
+    // here (rather than let each element/GameCarousel manage its own) so
+    // this composable can decide, in one place, which one actually gets
+    // focus-requested on entry - see the LaunchedEffect below.
+    val chooseFolderFocusRequester = remember { FocusRequester() }
+    val settingsFocusRequester = remember { FocusRequester() }
+    val carouselFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        when (dashboardFocus) {
+            DashboardFocusTarget.ChooseFolder -> chooseFolderFocusRequester.requestFocus()
+            DashboardFocusTarget.Settings -> settingsFocusRequester.requestFocus()
+            // Only if the carousel is actually present - games.isEmpty()
+            // (or an unresolved/missing folder) means GameCarousel below
+            // was never composed, so its FocusRequester was never attached
+            // to anything and requestFocus() on it would throw.
+            DashboardFocusTarget.Carousel -> if (games.isNotEmpty()) carouselFocusRequester.requestFocus()
+        }
+    }
     // #66 - resolved from whichever game is currently focused in the
     // carousel (carouselPage, kept in sync by GameCarousel's own
     // snapshotFlow) - re-resolves on every recomposition without any extra
@@ -839,10 +874,20 @@ private fun HomeScreen(
                 // scrim exists to make possible. Left at the default theme
                 // color the rest of the time, matching the plain background.
                 val iconTint = if (backgroundFile != null) Color.White else LocalContentColor.current
-                HypdroidIconButton(onClick = onChooseFolder) {
+                HypdroidIconButton(
+                    onClick = onChooseFolder,
+                    modifier = Modifier
+                        .focusRequester(chooseFolderFocusRequester)
+                        .onFocusChanged { if (it.isFocused) onDashboardFocusChanged(DashboardFocusTarget.ChooseFolder) },
+                ) {
                     Icon(Icons.Filled.Add, contentDescription = "Choose game folder", tint = iconTint)
                 }
-                HypdroidIconButton(onClick = onOpenSettings) {
+                HypdroidIconButton(
+                    onClick = onOpenSettings,
+                    modifier = Modifier
+                        .focusRequester(settingsFocusRequester)
+                        .onFocusChanged { if (it.isFocused) onDashboardFocusChanged(DashboardFocusTarget.Settings) },
+                ) {
                     Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = iconTint)
                 }
             }
@@ -871,6 +916,8 @@ private fun HomeScreen(
                         globalCoverArtType = globalCoverArtType,
                         initialPage = carouselPage,
                         onPageChanged = onCarouselPageChanged,
+                        focusRequester = carouselFocusRequester,
+                        onFocused = { onDashboardFocusChanged(DashboardFocusTarget.Carousel) },
                         onPlay = onPlay,
                         onOpenOptions = onOpenOptions,
                     )
@@ -898,6 +945,8 @@ private fun GameCarousel(
     globalCoverArtType: CoverArtType,
     initialPage: Int,
     onPageChanged: (Int) -> Unit,
+    focusRequester: FocusRequester,
+    onFocused: () -> Unit,
     onPlay: (Game) -> Unit,
     onOpenOptions: (Game) -> Unit,
 ) {
@@ -919,8 +968,13 @@ private fun GameCarousel(
     // focus-traversal handles simple linear lists, but not page-changing
     // gestures like this) - this is gamepad-first hardware, so real d-pad
     // paging needs to be wired up explicitly, not left as a touch-only gap.
-    val focusRequester = remember { FocusRequester() }
-    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    //
+    // #144 - focusRequester is now passed in from HomeScreen (which owns
+    // the request-on-entry decision for the whole dashboard) rather than
+    // created and unconditionally self-requested here - this used to grab
+    // D-pad focus back to the carousel on every return to Screen.Home,
+    // even when an icon (not the carousel) was what actually had focus
+    // before navigating away.
 
     // #105 - card width derived from screen width instead of a fixed
     // 420.dp, same basis as #97's touch-button fix. The fraction
@@ -947,6 +1001,7 @@ private fun GameCarousel(
             .fillMaxSize()
             .focusRequester(focusRequester)
             .focusable()
+            .onFocusChanged { if (it.isFocused) onFocused() }
             .onKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
                 // #31 - pressing down opens the focused game's options
