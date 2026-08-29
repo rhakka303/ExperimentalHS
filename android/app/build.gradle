@@ -3,10 +3,48 @@ plugins {
      id 'org.jetbrains.kotlin.android'
 }
 
+// #150 - the three native-build tool locations below used to be hardcoded
+// absolute paths, which meant the build only worked on one machine. They're
+// resolved here at configure time instead.
+//
+// CMake wants forward slashes even on Windows, hence the normalization.
+def toCMakePath = { path -> path.toString().replace('\\', '/') }
+
+def localProps = new Properties()
+def localPropsFile = rootProject.file('local.properties')
+if (localPropsFile.exists()) {
+    localPropsFile.withInputStream { localProps.load(it) }
+}
+
+// Kept as a variable rather than read back off the android extension, since
+// it's needed both by AGP (ndkVersion below) and to build the NDK toolchain
+// path, and referencing the extension from inside its own closure is fragile.
+def hypdroidNdkVersion = '30.0.15729638'
+
+// local.properties' sdk.dir is Android's own standard, per-machine SDK
+// pointer (and is gitignored). ANDROID_HOME/ANDROID_SDK_ROOT are the
+// conventional fallbacks for CI or a shell-configured environment.
+def resolvedSdkDir = localProps.getProperty('sdk.dir')
+    ?: System.getenv('ANDROID_HOME')
+    ?: System.getenv('ANDROID_SDK_ROOT')
+if (resolvedSdkDir == null) {
+    throw new GradleException(
+        "Android SDK location not found. Set 'sdk.dir' in android/local.properties, " +
+        "or set the ANDROID_HOME environment variable.")
+}
+def ndkToolchainFile = "${toCMakePath(resolvedSdkDir)}/ndk/${hypdroidNdkVersion}/build/cmake/android.toolchain.cmake"
+
+// vcpkg lives at the repo root, one level above this Gradle project.
+def vcpkgToolchainFile = "${toCMakePath(rootProject.file('../vcpkg').canonicalPath)}/scripts/buildsystems/vcpkg.cmake"
+
+// Needed by vcpkg's own toolchain. Not on PATH in every environment, so it's
+// overridable; see docs/ENVIRONMENT.md.
+def pkgConfigExecutable = toCMakePath(localProps.getProperty('pkgconfig.exe') ?: 'pkg-config')
+
 android {
     namespace = "org.libsdl.app"
     compileSdkVersion 35
-    ndkVersion = "30.0.15729638"
+    ndkVersion = hypdroidNdkVersion
     defaultConfig {
         // All Files Access (MANAGE_EXTERNAL_STORAGE, #27) is fundamentally
         // an API 30+ concept - bumped from the SDL template's default 21
@@ -40,10 +78,10 @@ android {
                 // vcpkg's arm64-android packages instead of failing outright.
                 arguments "-DANDROID_PLATFORM=android-28",
                     "-DANDROID_STL=c++_static",
-                    "-DCMAKE_TOOLCHAIN_FILE=D:/Claude Code/Hypdroid/vcpkg/scripts/buildsystems/vcpkg.cmake",
+                    "-DCMAKE_TOOLCHAIN_FILE=${vcpkgToolchainFile}".toString(),
                     "-DVCPKG_TARGET_TRIPLET=arm64-android",
-                    "-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=C:/Users/rhakk/AppData/Local/Android/Sdk/ndk/30.0.15729638/build/cmake/android.toolchain.cmake",
-                    "-DPKG_CONFIG_EXECUTABLE=C:/Users/rhakk/msys2-buildtools/usr/bin/pkg-config.exe"
+                    "-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=${ndkToolchainFile}".toString(),
+                    "-DPKG_CONFIG_EXECUTABLE=${pkgConfigExecutable}".toString()
                 // arm64-v8a only: Phase B's vcpkg dependencies were built
                 // exclusively for the arm64-android triplet (matching the
                 // real target hardware - Retroid Pocket 5 / SBCs), not
