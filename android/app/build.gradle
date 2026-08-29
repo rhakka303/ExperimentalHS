@@ -17,8 +17,8 @@ android {
         minSdkVersion 30
         targetSdkVersion 35
         applicationId "org.libsdl.app"
-        versionCode 2
-        versionName "2.0"
+        versionCode 3
+        versionName "3.0"
         externalNativeBuild {
             cmake {
                 // android-28 matches what Phase B's vcpkg triplet and the
