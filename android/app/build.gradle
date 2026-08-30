@@ -67,9 +67,13 @@ android {
         // declaration are deliberately left alone. applicationId and
         // namespace are independent in Android, so a full source-tree
         // package rename would be churn with no visible effect.
+        //
+        // Version numbers deliberately track whatever mainline Hypdroid
+        // this repo was last synced with (currently v4.0), so it's always
+        // obvious which upstream baseline any experimental build sits on.
         applicationId "com.hypdroid.experimental"
-        versionCode 3
-        versionName "3.0"
+        versionCode 4
+        versionName "4.0"
         externalNativeBuild {
             cmake {
                 // android-28 matches what Phase B's vcpkg triplet and the
