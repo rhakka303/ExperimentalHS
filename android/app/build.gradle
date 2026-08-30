@@ -62,6 +62,13 @@ android {
         // app's install on the same device. Distinct IDs let both sit
         // side by side on the test hardware.
         //
+        // #1 - the ID is "com.exphs", not "com.hypdroid.experimental" as
+        // it was originally. A hypdroid-prefixed ID read as though these
+        // builds belonged to Hypdroid, which is the opposite of the point
+        // of this repo. Note this was NOT an upgrade in place: the old ID
+        // is a different app to Android, so an existing experimental
+        // install had to be removed and storage access granted again.
+        //
         // Inherited from Hypdroid's #147 and still true here: `namespace`
         // (above) and every source file's actual `package org.libsdl.app`
         // declaration are deliberately left alone. applicationId and
@@ -71,7 +78,7 @@ android {
         // Version numbers deliberately track whatever mainline Hypdroid
         // this repo was last synced with (currently v4.0), so it's always
         // obvious which upstream baseline any experimental build sits on.
-        applicationId "com.hypdroid.experimental"
+        applicationId "com.exphs"
         versionCode 4
         versionName "4.0"
         externalNativeBuild {
