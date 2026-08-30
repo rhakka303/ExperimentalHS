@@ -59,16 +59,6 @@
 #define MPO_FTELL ftello
 #endif
 
-#ifdef __ANDROID__
-// Android's Bionic libc has no glibc-style fopen64/fseeko64/ftello64
-// variants; off_t is already 64-bit by default for LP64 targets like
-// arm64-v8a, so the plain-named functions (same as the macOS branch
-// above) are correct here.
-#define MPO_FOPEN fopen
-#define MPO_FSEEK fseeko
-#define MPO_FTELL ftello
-#endif
-
 #endif
 
 struct mpo_io {

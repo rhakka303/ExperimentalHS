@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 cmake_policy(SET CMP0074 NEW)
 
-set(PKG_VERSION "v3.0.1")
+set(PKG_VERSION "v3.0.2")
 
 project(hypseus)
 
@@ -62,25 +62,7 @@ include(BuildLibMPEG2)
 
 set (CMAKE_CXX_STANDARD 11)
 
-if( ANDROID )
-    # The upstream build_libmpeg2() macro cross-compiles via an autotools
-    # ExternalProject_Add step (libtoolize/autoreconf/configure/make),
-    # triggered mid-CMake-configure. That's fragile to wire through a
-    # cross-compiling CMake configure on Android (needs a POSIX shell +
-    # autotools + the NDK toolchain all correctly threaded through
-    # ExternalProject's subprocess environment). Since Phase B already
-    # cross-compiled and verified libmpeg2 for arm64-v8a by hand (see
-    # docs/ENVIRONMENT.md), point directly at that pre-built artifact
-    # instead of re-triggering the autotools build here.
-    set( HYPDROID_PREBUILT_DIR "${CMAKE_SOURCE_DIR}/../../prebuilt" )
-    set( MPEG2_INCLUDE_DIRS "${HYPDROID_PREBUILT_DIR}/libmpeg2/arm64-v8a/include/mpeg2dec" )
-    set( MPEG2_LIBRARIES "${HYPDROID_PREBUILT_DIR}/libmpeg2/arm64-v8a/lib/libmpeg2.a" )
-    if( NOT EXISTS "${MPEG2_LIBRARIES}" )
-        message( FATAL_ERROR "Pre-built libmpeg2 not found at ${MPEG2_LIBRARIES} - see docs/ENVIRONMENT.md for the build recipe." )
-    endif()
-else()
-    build_libmpeg2( )
-endif()
+build_libmpeg2( )
 
 message(STATUS "Target: ${CMAKE_SYSTEM_NAME} ${CMAKE_TARGET_ARCHITECTURES}")
 
@@ -93,30 +75,9 @@ else()
 endif()
 string(REGEX REPLACE "^v" "" RESULT ${VER_TAG})
 string(REGEX REPLACE "[-\\.]" ";" RESULT ${RESULT})
-# Hypdroid Android port: this assumed every git tag in the repo has exactly
-# 3 dot/dash-separated parts (MAJOR.MINOR.PATCH). Since hypseus-singe is
-# vendored as plain files in the same git repo (not a submodule), this also
-# picks up Hypdroid's own release tags (e.g. "v1.0", "v2.0" - deliberately
-# 2-part, not 3), which crashed list(GET RESULT 2 ...) once any such tag
-# existed (repo had zero tags before the v1.0 release, so this path was
-# never actually exercised until then). Defensive now - any tag with fewer
-# than 3 parts just gets "0" for the missing ones instead of crashing.
-list(LENGTH RESULT VER_PARTS_COUNT)
-if(VER_PARTS_COUNT GREATER 0)
-    list(GET RESULT 0 VER_MAJOR)
-else()
-    set(VER_MAJOR "0")
-endif()
-if(VER_PARTS_COUNT GREATER 1)
-    list(GET RESULT 1 VER_MINOR)
-else()
-    set(VER_MINOR "0")
-endif()
-if(VER_PARTS_COUNT GREATER 2)
-    list(GET RESULT 2 VER_PATCH)
-else()
-    set(VER_PATCH "0")
-endif()
+list(GET RESULT 0 VER_MAJOR)
+list(GET RESULT 1 VER_MINOR)
+list(GET RESULT 2 VER_PATCH)
 if(NOT "${VER_GIT_COUNT}" EQUAL "0")
     set(VER_TAG "${VER_TAG}-${VER_GIT_COUNT}")
 endif()
@@ -180,24 +141,13 @@ add_subdirectory(timer)
 add_subdirectory(video)
 add_subdirectory(vldp)
 
-if( NOT ANDROID )
-    # On Android, libmpeg2 is a pre-built artifact (see above), not a
-    # target this CMake invocation builds - no ordering dependency needed.
-    add_dependencies( vldp libmpeg2 )
-endif()
+add_dependencies( vldp libmpeg2 )
 add_dependencies( ldp-out vldp )
 add_dependencies( game vldp )
 add_dependencies( sound vldp )
 
-if( ANDROID )
-    # SDL3's Android JNI shell loads the app as a shared library named
-    # "main" (System.loadLibrary("main")), not a standalone executable.
-    add_library( main SHARED hypseus.cpp globals.h )
-    target_link_libraries( main plog io timer sound video cpu game ${Vorbis_Enc_LIBRARY} Vorbis::vorbis ${OGG_LIBRARIES} ${VORBISFILE_LIBRARIES} ${Vorbis_File_LIBRARY} SDL3::SDL3 SDL3::Headers SDL3_ttf::SDL3_ttf SDL3_image::SDL3_image SDL3_mixer::SDL3_mixer ${LIBZIP_LIBRARY} )
-else()
-    add_executable( hypseus hypseus.cpp globals.h )
-    target_link_libraries( hypseus plog io timer sound video cpu game ${Vorbis_Enc_LIBRARY} Vorbis::vorbis ${OGG_LIBRARIES} ${VORBISFILE_LIBRARIES} ${Vorbis_File_LIBRARY} SDL3::SDL3 SDL3::Headers SDL3_ttf::SDL3_ttf SDL3_image::SDL3_image SDL3_mixer::SDL3_mixer ${LIBZIP_LIBRARY} )
-endif()
+add_executable( hypseus hypseus.cpp globals.h )
+target_link_libraries( hypseus plog io timer sound video cpu game ${Vorbis_Enc_LIBRARY} Vorbis::vorbis ${OGG_LIBRARIES} ${VORBISFILE_LIBRARIES} ${Vorbis_File_LIBRARY} SDL3::SDL3 SDL3::Headers SDL3_ttf::SDL3_ttf SDL3_image::SDL3_image SDL3_mixer::SDL3_mixer ${LIBZIP_LIBRARY} )
 
 if(ASAN)
     target_link_options(hypseus PRIVATE -fsanitize=address -fno-omit-frame-pointer -g)

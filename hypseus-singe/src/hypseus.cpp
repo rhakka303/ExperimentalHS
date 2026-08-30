@@ -50,12 +50,6 @@ using namespace std;
 #endif
 
 #include <SDL3/SDL.h>
-#ifdef ANDROID
-// SDL3's Android JNI glue looks up main() by the symbol name "SDL_main" -
-// SDL_main.h's macro magic renames it at compile time. Desktop builds run
-// main() directly via the OS and don't need this.
-#include <SDL3/SDL_main.h>
-#endif
 #include <SDL3_image/SDL_image.h>
 #include <SDL3_mixer/SDL_mixer.h>
 
@@ -175,28 +169,12 @@ int main(int argc, char **argv)
                 SDL_INIT_HAPTIC ))
     {
         printerror(SDL_GetError());
-#ifdef __ANDROID__
-        // SDL3's own Android glue (nativeRunMain in SDL_android.c) warns
-        // against calling exit() here: "the whole application will
-        // terminate instead of just the SDL thread." A raw exit() from
-        // this thread tears down process-wide CRT/threading state while
-        // Android's real UI thread may still be live - confirmed as the
-        // cause of a real FORTIFY/SIGABRT shutdown crash (#76), reproduced
-        // on both a Samsung Galaxy Tab S7+ and the Retroid Pocket 5.
-        return result_code;
-#else
-        exit(result_code);
-#endif
+        goto cleanup;
     }
 
     if (!TTF_Init()) {
         printerror(SDL_GetError());
-        SDL_Quit();
-#ifdef __ANDROID__
-        return result_code;
-#else
-        exit(result_code);
-#endif
+        goto cleanup;
     }
 
     // parse the command line (which allocates game and ldp) and continue if no
@@ -319,16 +297,9 @@ int main(int argc, char **argv)
 
     TTF_Quit();
 
+cleanup:
     SDL_Quit();
-#ifdef __ANDROID__
-    // Same reasoning as the early-exit paths above: return instead of
-    // exit() so nativeRunMain()'s SDL_RunApp() call gets the status back
-    // and Java drives the actual process teardown, instead of a raw libc
-    // exit() from this thread racing Android's still-live UI thread.
     return result_code;
-#else
-    exit(result_code);
-#endif
 }
 
 void set_search_offset(int i) { search_offset = i; }

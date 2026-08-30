@@ -235,7 +235,7 @@ static std::string getUid()
         RegCloseKey(hKey);
     }
     return k;
-#elif defined(__linux__) && !defined(__ANDROID__)
+#elif defined(__linux__)
     std::string id = read_id();
     if (id.empty()) return k;
 

@@ -94,9 +94,11 @@ SDL_Texture *g_bezel_texture           = NULL;
 SDL_Texture *g_aux_texture             = NULL;
 
 SDL_FRect fScaleRect;
+SDL_FRect fOverlayRect;
 SDL_FRect *g_yuv_frect[2]              = {NULL};
 
 SDL_Rect g_aux_rect;
+SDL_Rect g_bezel_rect;
 SDL_Rect g_border_rect;
 SDL_Rect g_scaling_rect                = {0};
 SDL_Rect g_logical_rect                = {0};
@@ -115,6 +117,8 @@ int sboverlay_characterset             = 2;
 
 int8_t g_rescale                       = 0;
 int8_t g_yuv_luma                      = YUV_FLAG_LUMA;
+
+uint64_t g_bezelhash                   = 0;
 
 uint8_t g_scanline_alpha               = 128;
 uint8_t g_scanline_shunt               = 2;
@@ -200,6 +204,23 @@ static void calcAuxRect()
      double scale = 9.0f - double((g_aux_bezel_scale << 1) / 10.0f);
      g_aux_rect.w = (g_bezel_scalewidth / scale);
      g_aux_rect.h = (g_aux_rect.w * g_aux_ratio);
+}
+
+static uint64_t calcHash(const void* data, size_t size)
+{
+    if (size == 0) return 0;
+
+    const auto* bytes = static_cast<const uint8_t*>(data);
+
+    uint64_t hash = 14695981039346656037ull;
+
+    for (size_t i = 0; i < size; ++i)
+    {
+        hash ^= bytes[i];
+        hash *= 1099511628211ull;
+    }
+
+    return hash;
 }
 
 static void resize_cleanup()
@@ -307,6 +328,8 @@ static void format_window_render()
     g_logical_rect.w = g_mix_texture.w = g_scaling_rect.w;
     g_logical_rect.h = g_mix_texture.h = g_scaling_rect.h;
 
+    if (VIDEO_HAS(BEZEL_OVERLAY)) VIDEO_CLEAR(OVERLAY_LAST);
+
     if (!g_rescale)
     {
         g_border_rect = (SDL_Rect){0, 0, g_viewport_width, g_viewport_height};
@@ -317,41 +340,13 @@ static void format_window_render()
 static void format_fullscreen_render()
 {
     int w, h;
-    double ratio = static_cast<double>(g_viewport_width) / g_viewport_height;
+    const double ratio = static_cast<double>(g_viewport_width) / g_viewport_height;
 
-    // Hypdroid Android port (#109): opt-in, off by default. Every other
-    // branch below computes a destination rect matching the *screen's* own
-    // ratio (or a hardcoded preset), which is why real widescreen content
-    // fills the screen edge-to-edge with no letterbox bars even when its
-    // actual shape doesn't match the display - root-caused to a precision
-    // mismatch elsewhere (vldp_internal.cpp's raw-computed aspect ratio for
-    // real 1920x1080 content is 177, not the named ASPECTWS preset's exact
-    // 178, so it silently misses that switch case below). Rather than widen
-    // that match and risk changing default behavior for everyone, this is a
-    // separate, explicit path: fit the video's real detected aspect ratio
-    // (g_probe_width/g_probe_height, the actual decoded MPEG dimensions,
-    // not a preset) entirely within the screen, picking whichever axis is
-    // the constraining one so the result never overflows either dimension.
-    // The existing centering math a few lines below
-    // (g_scaling_rect.x/y = (logical - scaling) >> 1) already produces
-    // correct letterbox/pillarbox bars for a scaling_rect smaller than the
-    // logical_rect in one dimension - unchanged, reused as-is.
-    if (VIDEO_HAS(PRESERVE_ASPECT) && g_probe_width > 0 && g_probe_height > 0)
-    {
-        double video_ratio = static_cast<double>(g_viewport_width) / g_viewport_height;
-        double screen_ratio = static_cast<double>(g_logical_rect.w) / g_logical_rect.h;
-        if (video_ratio > screen_ratio)
-        {
-            w = g_logical_rect.w;
-            h = static_cast<int>(w / video_ratio);
-        }
-        else
-        {
-            h = g_logical_rect.h;
-            w = static_cast<int>(h * video_ratio);
-        }
-    }
-    else if (VIDEO_HAS(VIDEO_RESIZED))
+    if (VIDEO_HAS(BEZEL_OVERLAY)) VIDEO_SET(OVERLAY_LAST);
+
+    g_bezel_rect = SDL_Rect{0, 0, g_logical_rect.w, g_logical_rect.h};
+
+    if (VIDEO_HAS(RESIZED_MEDIA))
     {
         w = g_viewport_width;
         h = g_viewport_height;
@@ -372,13 +367,25 @@ static void format_fullscreen_render()
         }
     }
 
-    // PRESERVE_ASPECT already computed the correct w/h above - skip the
-    // FORCE_ASPECT/IGNORE_ASPECT override entirely so they can't fight with it.
-    if (!VIDEO_HAS(PRESERVE_ASPECT))
+    if (VIDEO_HAS(PRESERVE_ASPECT))
     {
-        w = VIDEO_HAS(FORCE_ASPECT) ? (h * 4) / 3 : (VIDEO_HAS(IGNORE_ASPECT) ?
-                                         static_cast<int>(h * ratio) : w);
+        const double video_ratio = static_cast<double>(w) / h;
+        const double screen_ratio = static_cast<double>(g_logical_rect.w) / g_logical_rect.h;
+
+        if (video_ratio > screen_ratio)
+        {
+            w = g_logical_rect.w;
+            h = static_cast<int>(w / video_ratio);
+        }
+        else
+        {
+            h = g_logical_rect.h;
+            w = static_cast<int>(h * video_ratio);
+        }
     }
+    else
+        w = VIDEO_HAS(FORCE_ASPECT) ? (h * 4) / 3 : (VIDEO_HAS(IGNORE_ASPECT) ?
+                                 static_cast<int>(h * ratio) : w);
 
     g_scaling_rect.w = (w * g_scalefactor) / 100;
     g_scaling_rect.h = (h * g_scalefactor) / 100;
@@ -398,40 +405,22 @@ static void format_fullscreen_render()
 
     if (VIDEO_HAS(SCOREBOARD_BEZEL))
     {
+        g_bezel_scalewidth = w;
         double bezel_ratio = static_cast<double>(g_scoreboard_h) / g_scoreboard_w;
+        double scale = 9.0 - (static_cast<double>(g_scoreboard_bezel_scale) * 2.0 / 10.0);
 
-        // Hypdroid Android port (#111): default sizing below scales the
-        // bezel to a fixed fraction of the video's own width, unrelated to
-        // how wide the real pillarbox bar next to the video actually is -
-        // whether that fixed fraction fits inside the real bar or overflows
-        // past it is coincidental per screen/game combination. When
-        // SCOREBOARD_AUTOFIT is set and the video is pillarboxed
-        // (g_scaling_rect.x > 0, i.e. real bar space exists on each side),
-        // size the bezel to fit entirely within that real space instead,
-        // clamped to the screen height too so it can never overflow either
-        // dimension. Anchored to the top-left corner of the left bar,
-        // matching today's default (0, 0) position.
-        if (VIDEO_HAS(SCOREBOARD_AUTOFIT) && g_scaling_rect.x > 0)
-        {
-            int rect_w = g_scaling_rect.x;
-            int rect_h = static_cast<int>(rect_w * bezel_ratio);
-            if (rect_h > g_logical_rect.h)
-            {
-                rect_h = g_logical_rect.h;
-                rect_w = static_cast<int>(rect_h / bezel_ratio);
-            }
-            g_scoreboard_bezel_rect = {0, 0, rect_w, rect_h};
-        }
-        else
-        {
-            g_bezel_scalewidth = w;
-            double scale = 9.0 - (static_cast<double>(g_scoreboard_bezel_scale) * 2.0 / 10.0);
-
-            g_scoreboard_bezel_rect = {scoreboard_window_pos_x, scoreboard_window_pos_y,
-                               static_cast<int>(g_bezel_scalewidth / scale),
-                               static_cast<int>((g_bezel_scalewidth / scale) * bezel_ratio)};
-        }
+        g_scoreboard_bezel_rect = {scoreboard_window_pos_x, scoreboard_window_pos_y,
+                           static_cast<int>(g_bezel_scalewidth / scale),
+                           static_cast<int>((g_bezel_scalewidth / scale) * bezel_ratio)};
         VIDEO_SET(BEZEL_TOGGLE);
+    }
+
+    if (VIDEO_HAS(PRESERVE_ASPECT) && g_aspect_ratio == ASPECTWS)
+    {
+        if (g_display == 0)
+            g_bezel_rect = g_scaling_rect;
+        else
+            VIDEO_CLEAR(BEZEL_TOGGLE);
     }
 
     if (!g_rescale)
@@ -458,8 +447,8 @@ static bool draw_ranks()
 
         g_scoreboard_surface = g_other_bmps[i];
 
-        dest.w = (unsigned short) g_scoreboard_surface->w;
-        dest.h = (unsigned short) g_scoreboard_surface->h;
+        dest.w = (uint16_t)g_scoreboard_surface->w;
+        dest.h = (uint16_t)g_scoreboard_surface->h;
         SDL_BlitSurface(g_scoreboard_surface, NULL, g_aux_blit_surface, &dest);
         dest.y = dest.y + (ANUN_CHAR_HEIGHT << 1) + (ANUN_CHAR_HEIGHT);
     }
@@ -502,7 +491,7 @@ bool init_display()
     g_probe_width = std::max((int)g_probe_width, 320);
     g_probe_height = std::max((int)g_probe_height, 240);
 
-    if (VIDEO_HAS(VIDEO_RESIZED))
+    if (VIDEO_HAS(RESIZED_MEDIA))
     {
         g_viewport_width  = g_video_width;
         g_viewport_height = g_video_height;
@@ -860,24 +849,21 @@ bool init_display()
             colorkey = SDL_MapSurfaceRGB(g_other_bmps[B_OVERLAY_LDP1450], 0, 0, 0);
             SDL_SetSurfaceColorKey(g_other_bmps[B_OVERLAY_LDP1450], true, colorkey);
 
-            if (g_overlay_width && g_overlay_height)
+            g_overlay_texture = SDL_CreateTexture(g_renderer, SDL_PIXELFORMAT_RGBA32,
+                                    g_texture_access, g_overlay_width, g_overlay_height);
+
+            if (!g_overlay_texture)
             {
-                g_overlay_texture = SDL_CreateTexture(g_renderer, SDL_PIXELFORMAT_RGBA32,
-                                        g_texture_access, g_overlay_width, g_overlay_height);
-
-                if (!g_overlay_texture)
-                {
-                    LOGE << fmt("Could not initialize g_overlay_texture: %s", SDL_GetError());
-                    set_quitflag();
-                    goto exit;
-                }
-
-                SDL_SetTextureBlendMode(g_overlay_texture, SDL_BLENDMODE_BLEND);
-                SDL_SetTextureAlphaMod(g_overlay_texture, 0xff);
-
-                SDL_SetTextureScaleMode(g_overlay_texture, VIDEO_HAS(SCALE_LINEAR) ?
-                          SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST);
+                LOGE << fmt("Could not initialize g_overlay_texture: %s", SDL_GetError());
+                set_quitflag();
+                goto exit;
             }
+
+            SDL_SetTextureBlendMode(g_overlay_texture, SDL_BLENDMODE_BLEND);
+            SDL_SetTextureAlphaMod(g_overlay_texture, 0xff);
+
+            SDL_SetTextureScaleMode(g_overlay_texture, VIDEO_HAS(SCALE_LINEAR) ?
+                      SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST);
 
             SDL_SetRenderDrawColor(g_renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
 
@@ -1147,10 +1133,10 @@ bool draw_led(int value, int x, int y, unsigned char end)
     static unsigned char led = 0;
 
     SDL_Rect dest;
-    dest.x = (short) x;
-    dest.y = (short) y;
-    dest.w = (unsigned short) g_scoreboard_surface->w;
-    dest.h = (unsigned short) g_scoreboard_surface->h;
+    dest.x = (int16_t)x;
+    dest.y = (int16_t)y;
+    dest.w = (uint16_t)g_scoreboard_surface->w;
+    dest.h = (uint16_t)g_scoreboard_surface->h;
 
     if (!SDL_BlitSurface(g_scoreboard_surface, NULL, g_scoreboard_blit_surface, &dest))
     {
@@ -1190,8 +1176,8 @@ static bool draw_annunciator1(int which)
     dest.x = g_aux_blit_surface->w - (g_scoreboard_surface->w
                    + (g_scoreboard_surface->w >> 1));
 
-    dest.w = (unsigned short) g_scoreboard_surface->w;
-    dest.h = (unsigned short) g_scoreboard_surface->h;
+    dest.w = (uint16_t)g_scoreboard_surface->w;
+    dest.h = (uint16_t)g_scoreboard_surface->h;
 
     for (int i = 0; i < ANUN_LEVELS; i++)
     {
@@ -1357,10 +1343,10 @@ bool draw_othergfx(int which, int x, int y)
         SDL_RenderClear(g_scoreboard_renderer);
 
     SDL_Rect dest;
-    dest.x = (short)x;
-    dest.y = (short)y;
-    dest.w = (unsigned short) g_scoreboard_surface->w;
-    dest.h = (unsigned short) g_scoreboard_surface->h;
+    dest.x = (int16_t)x;
+    dest.y = (int16_t)y;
+    dest.w = (uint16_t)g_scoreboard_surface->w;
+    dest.h = (uint16_t)g_scoreboard_surface->h;
 
     SDL_BlitSurface(g_scoreboard_surface, NULL, g_scoreboard_blit_surface, &dest);
 
@@ -1414,7 +1400,7 @@ Uint16 get_viewport_height() { return g_viewport_height; }
 int get_scoreboard_bezel_scale() { return g_scoreboard_bezel_scale; }
 int get_aux_bezel_scale() { return g_aux_bezel_scale; }
 
-bool get_bezelstatus() { return g_bezel_texture ? true : false; }
+uint64_t get_bezelstatus() { return g_bezelhash; }
 
 int get_display_no() { return g_display; }
 int get_scale_h_shift() { return g_scale_h_shift; };
@@ -1429,7 +1415,7 @@ bool get_opengl() { return VIDEO_HAS(OPENGL); }
 bool get_vulkan() { return VIDEO_HAS(VULKAN); }
 bool get_fullscreen() { return VIDEO_HAS(FULLSCREEN); }
 bool get_aux_bezel() { return (g_aux_texture != NULL); }
-bool get_video_resized() { return VIDEO_HAS(VIDEO_RESIZED); }
+bool get_video_resized() { return VIDEO_HAS(RESIZED_MEDIA); }
 bool use_legacy_font() { return VIDEO_HAS(LEGACY_OVERLAY); }
 
 void set_fullscreen(bool value) { VIDEO_ASSIGN(FULLSCREEN, value); }
@@ -1454,10 +1440,7 @@ void set_sboverlay_white(bool value) { VIDEO_ASSIGN(OVERLAY_WHITE, value); }
 void set_legacy_overlay(bool value) { VIDEO_ASSIGN(LEGACY_OVERLAY, value); }
 void set_force_aspect_ratio(bool value) { VIDEO_ASSIGN(FORCE_ASPECT, value); }
 void set_ignore_aspect_ratio(bool value) { VIDEO_ASSIGN(IGNORE_ASPECT, value); }
-void set_preserve_aspect_ratio(bool value) { VIDEO_ASSIGN(PRESERVE_ASPECT, value); } // Hypdroid Android port (#109)
-void set_scorebezel_autofit(bool value) { VIDEO_ASSIGN(SCOREBOARD_AUTOFIT, value); } // Hypdroid Android port (#111)
-void set_overlaybezel(bool value) { VIDEO_ASSIGN(OVERLAY_BEZEL, value); } // Hypdroid Android port (#117)
-void set_aspectbezelfix(bool value) { VIDEO_ASSIGN(ASPECT_BEZEL_FIX, value); } // Hypdroid Android port (#137)
+void set_preserve_aspect_ratio(bool value) { VIDEO_ASSIGN(PRESERVE_ASPECT, value); }
 void set_aspect_ratio(int fRatio) { g_aspect_ratio = fRatio; }
 void set_detected_height(int pHeight) { g_probe_height = pHeight; }
 void set_detected_width(int pWidth) { g_probe_width = pWidth; }
@@ -1494,6 +1477,13 @@ void set_blendfilter(bool value)
     else g_yuv_flags &= ~YUV_FLAG_BLEND;
 }
 
+void set_overlayscalemode(bool value)
+{
+    VIDEO_ASSIGN(SCALE_LINEAR, value);
+    SDL_SetTextureScaleMode(g_overlay_texture, value ?
+      SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST);
+}
+
 void set_luma(bool value, uint8_t luma)
 {
     uint8_t mask = (uint8_t)-(value && (luma != YUV_FLAG_LUMA)) & YUV_FLAG_LUMA;
@@ -1504,6 +1494,16 @@ void set_luma(bool value, uint8_t luma)
 void set_overlay_alpha(uint8_t alpha)
 {
     SDL_SetTextureAlphaMod(g_overlay_texture, alpha);
+}
+
+uint64_t set_overlaybezel(bool value, bool cli)
+{
+    if (cli)
+        VIDEO_ASSIGN(BEZEL_OVERLAY, value);
+    else if (g_bezelhash > 0)
+        VIDEO_ASSIGN(BEZEL_OVERLAY | OVERLAY_LAST, value);
+
+    return g_bezelhash;
 }
 
 void toggle_grabmouse()
@@ -1520,6 +1520,12 @@ void toggle_grabmouse()
         SDL_SetWindowRelativeMouseMode(g_window, state);
         VIDEO_TOGGLE(video::GRAB_MOUSE);
     }
+}
+
+void toggle_bilinearscale()
+{
+    VIDEO_TOGGLE(SCALE_LINEAR);
+    set_overlayscalemode((VIDEO_HAS(SCALE_LINEAR) ? true : false));
 }
 
 void set_yuv_flash()
@@ -1573,6 +1579,10 @@ void set_game_window(const char* value)
 void set_rotate_degrees(float fDegrees)
 {
      VIDEO_SET(FULLSCREEN);
+
+     (fDegrees == 0) ? VIDEO_CLEAR(ROTATED_MEDIA) :
+                       VIDEO_SET(ROTATED_MEDIA);
+
      g_fRotateDegrees = fDegrees;
 }
 
@@ -1644,6 +1654,9 @@ void set_fRotateDegrees(float fDegrees, bool verbose)
          snprintf(d, sizeof(d), "%d\xC2\xB0", int(fDegrees));
          draw_subtitle(d, 1, true);
      }
+
+     (fDegrees == 0) ? VIDEO_CLEAR(ROTATED_MEDIA) :
+                       VIDEO_SET(ROTATED_MEDIA);
 
      g_fRotateDegrees = fDegrees;
 }
@@ -1815,7 +1828,7 @@ void set_video_width(Uint16 width)
     // We need to support arbitrary resolution to accomodate stuff like screen
     // rotation
     g_video_width = width;
-    VIDEO_SET(VIDEO_RESIZED);
+    VIDEO_SET(RESIZED_MEDIA);
 }
 
 // sets g_video_height
@@ -1826,16 +1839,16 @@ void set_video_height(Uint16 height)
     // We need to support arbitrary resolution to accomodate stuff like screen
     // rotation
     g_video_height = height;
-    VIDEO_SET(VIDEO_RESIZED);
+    VIDEO_SET(RESIZED_MEDIA);
 }
 
 void draw_string(const char *t, int col, int row, SDL_Surface *overlay,
                      SDL_Color rgb, bool outline)
 {
     SDL_Rect dest;
-    dest.y = (short)(row);
-    dest.x = (short)(col);
-    dest.w = (unsigned short)(6 * strlen(t));
+    dest.y = (int16_t)(row);
+    dest.x = (int16_t)(col);
+    dest.w = (uint16_t)(6 * strlen(t));
     dest.h = 14;
 
     SDL_Surface *text_surface = TTF_RenderText_Solid(g_ttfont, t, strlen(t), rgb);
@@ -2585,8 +2598,21 @@ static void vid_render_bezels()
     {
         if (!g_bezel_file.empty() && !g_bezel_texture)
         {
+            size_t fileSize = 0;
             std::string bezelpath =  g_bezel_path + std::string(PATH_SEPARATOR) + g_bezel_file;
-            g_bezel_texture = IMG_LoadTexture(g_renderer, bezelpath.c_str());
+
+            void* fileData = SDL_LoadFile(bezelpath.c_str(), &fileSize);
+
+            g_bezelhash = calcHash(fileData, fileSize);
+
+            if (g_bezelhash > 0)
+            {
+                SDL_IOStream* stream = SDL_IOFromConstMem(fileData, fileSize);
+
+                g_bezel_texture = stream ? IMG_LoadTexture_IO(g_renderer, stream, true) : nullptr;
+            }
+
+            SDL_free(fileData);
 
             if (g_bezel_texture)
             {
@@ -2597,31 +2623,27 @@ static void vid_render_bezels()
             else
             {
                 LOGW << fmt("Failed to load bezel: %s", bezelpath.c_str());
+                VIDEO_CLEAR(BEZEL_OVERLAY | OVERLAY_LAST);
             }
         }
         VIDEO_SET(BEZEL_LOAD);
     }
 
-    // Hypdroid Android port (#137): explicit per-game opt-in (unlike #131's
-    // reverted blanket PRESERVE_ASPECT-tied version, see ASPECT_BEZEL_FIX's
-    // doc comment in video.h) - only bezels that ask for this via
-    // -aspectbezelfix shrink to the video's own rect. Everything else keeps
-    // today's full-screen draw.
-    SDL_Rect bezel_rect = (VIDEO_HAS(PRESERVE_ASPECT) && VIDEO_HAS(ASPECT_BEZEL_FIX)) ?
-        g_scaling_rect : SDL_Rect{0, 0, g_logical_rect.w, g_logical_rect.h};
-
     if (VIDEO_HAS(BEZEL_REVERSE))
     {
         vid_render_texture(g_scoreboard_texture, g_scoreboard_bezel_rect);
         vid_render_texture(g_aux_texture, g_aux_rect);
-        vid_render_texture(g_bezel_texture, bezel_rect);
+        vid_render_texture(g_bezel_texture, g_bezel_rect);
     }
     else
     {
-        vid_render_texture(g_bezel_texture, bezel_rect);
+        vid_render_texture(g_bezel_texture, g_bezel_rect);
         vid_render_texture(g_aux_texture, g_aux_rect);
         vid_render_texture(g_scoreboard_texture, g_scoreboard_bezel_rect);
     }
+
+    if (VIDEO_HAS(OVERLAY_LAST))
+        SDL_RenderTexture(g_renderer, g_overlay_texture, &fOverlayRect, &fScaleRect);
 }
 
 void vid_blit()
@@ -2700,12 +2722,10 @@ void vid_blit()
     if (g_yuv_texture)
         SDL_RenderTexture(g_renderer, g_yuv_texture, g_yuv_frect[0], &fScaleRect);
 
-    if (g_overlay_texture)
-    {
-        SDL_FRect frect;
-        SDL_RectToFRect(&g_limit_rect, &frect);
-        SDL_RenderTexture(g_renderer, g_overlay_texture, &frect, &fScaleRect);
-    }
+    SDL_RectToFRect(&g_limit_rect, &fOverlayRect);
+
+    if (!VIDEO_HAS(OVERLAY_LAST))
+        SDL_RenderTexture(g_renderer, g_overlay_texture, &fOverlayRect, &fScaleRect);
 
     if (g_aux_needs_update) vid_render_aux();
 
@@ -2719,7 +2739,7 @@ void vid_blit()
     SDL_SetRenderTarget(g_renderer, NULL);
     SDL_RenderClear(g_renderer);
 
-    if (g_fRotateDegrees != 0)
+    if (VIDEO_HAS(ROTATED_MEDIA))
         SDL_RenderTextureRotated(g_renderer, g_mix_texture.t,  &fScaleRect,
              &fScaleRect, g_fRotateDegrees, NULL, SDL_FLIP_NONE);
     else
@@ -2734,24 +2754,6 @@ void vid_blit()
     }
 
     if (VIDEO_HAS(BEZEL_TOGGLE)) vid_render_bezels();
-
-    // Hypdroid Android port (#117): redraw the Singe overlay (score, lives,
-    // skip icon, move arrows, etc. - everything a game draws via spriteDraw)
-    // a second time here, on top of whatever bezel art vid_render_bezels()
-    // just drew over the whole screen. The first draw above (line ~2694)
-    // happened before the bezel and gets buried under it; this repeats that
-    // exact same draw (same source/dest rects) now that the render target is
-    // back to the real screen, so the overlay isn't hidden by custom bezel
-    // art. No effect unless a game/user has explicitly enabled this. Also
-    // requires a real g_bezel_texture to actually be loaded (#124) - without
-    // one there's nothing to be "on top of", and redrawing anyway produced
-    // visible ghosting/double-drawn text, confirmed on real hardware.
-    if (VIDEO_HAS(OVERLAY_BEZEL) && g_overlay_texture && g_bezel_texture)
-    {
-        SDL_FRect frect;
-        SDL_RectToFRect(&g_limit_rect, &frect);
-        SDL_RenderTexture(g_renderer, g_overlay_texture, &frect, &fScaleRect);
-    }
 
     if (VIDEO_HAS(TAKE_SCREENSHOT))
     {
@@ -2804,7 +2806,6 @@ void notify_stats(int overlaywidth, int overlayheight, const char* input)
            g_probe_height, overlaywidth, overlayheight, s,
              g_logical_rect.w, g_logical_rect.h, input);
 }
-
 
 void notify_positions()
 {
