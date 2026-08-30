@@ -84,12 +84,27 @@ endif()
 
 message(STATUS "Target: ${CMAKE_SYSTEM_NAME} ${CMAKE_TARGET_ARCHITECTURES}")
 
-git_describe(VER_TAG --tags --abbrev=0)
-if("${VER_TAG}" MATCHES "-NOTFOUND")
-    set(VER_TAG  ${PKG_VERSION})
+if(ANDROID)
+    # hypseus-singe is vendored as plain files in the same git repo as
+    # Hypdroid, not a submodule - git_describe below would find Hypdroid's
+    # own release tags (v1.0, v2.0, ...) instead of hypseus-singe's real
+    # version, misreporting it at every startup (confirmed: reported
+    # "v4.0", Hypdroid's own tag, instead of the real v3.0.2). Hypdroid's
+    # own version is already shown separately in its own About screen -
+    # hypseus's startup log should report its own real version, not ours.
+    # PKG_VERSION (above) is always correct for the vendored copy, so skip
+    # git-based detection entirely here rather than trying to make it
+    # disambiguate two unrelated tag namespaces in one shared repo.
+    set(VER_TAG ${PKG_VERSION})
     set(VER_GIT_COUNT "0")
 else()
-    git_revlist(VER_GIT_COUNT --count ${VER_TAG}..HEAD)
+    git_describe(VER_TAG --tags --abbrev=0)
+    if("${VER_TAG}" MATCHES "-NOTFOUND")
+        set(VER_TAG  ${PKG_VERSION})
+        set(VER_GIT_COUNT "0")
+    else()
+        git_revlist(VER_GIT_COUNT --count ${VER_TAG}..HEAD)
+    endif()
 endif()
 string(REGEX REPLACE "^v" "" RESULT ${VER_TAG})
 string(REGEX REPLACE "[-\\.]" ";" RESULT ${RESULT})
