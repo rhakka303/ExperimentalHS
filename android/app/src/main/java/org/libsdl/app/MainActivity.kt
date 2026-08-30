@@ -55,6 +55,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -956,6 +957,21 @@ private fun GameCarousel(
                     onOpenOptions(games[pagerState.currentPage])
                     return@onKeyEvent true
                 }
+                // Launching used to rely on the focused card's own
+                // combinedClickable, which is exactly what made A launch
+                // the wrong game (see GameCard's focusProperties comment).
+                // Now that cards are out of focus traversal, the pager
+                // has to handle confirm itself - and it launches the
+                // centered page, which is the game the user can actually
+                // see is selected.
+                if (event.key == Key.Enter ||
+                    event.key == Key.NumPadEnter ||
+                    event.key == Key.DirectionCenter ||
+                    event.key == Key.ButtonA
+                ) {
+                    onPlay(games[pagerState.currentPage])
+                    return@onKeyEvent true
+                }
                 val targetPage = when (event.key) {
                     Key.DirectionLeft -> pagerState.currentPage - 1
                     Key.DirectionRight -> pagerState.currentPage + 1
@@ -1015,6 +1031,19 @@ private fun GameCard(
             // #31 - long-press is touch's equivalent of pressing down on
             // the d-pad (see GameCarousel's onKeyEvent above) - opens this
             // game's options screen (Cover Art/Bezel/Arguments).
+            //
+            // combinedClickable makes a component focusable by default,
+            // which put every card into d-pad focus traversal alongside
+            // the pager itself. Focus then landed on an individual card
+            // rather than the pager, and that card did not track the
+            // pager's centered page - so the highlight sat on the wrong
+            // card and pressing A launched whatever card held focus
+            // instead of the centered one. Left/right still worked only
+            // because the card ignores them and they bubbled up to the
+            // pager. Cards stay clickable for touch; the pager owns all
+            // d-pad handling (see its onKeyEvent). Same treatment as
+            // ControllerConfigScreen's picker buttons (#84).
+            .focusProperties { canFocus = false }
             .combinedClickable(onClick = onClick, onLongClick = onLongClick),
         contentAlignment = Alignment.Center,
     ) {
