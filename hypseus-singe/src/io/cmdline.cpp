@@ -1180,6 +1180,16 @@ bool parse_cmd_line(int argc, char **argv)
                 printline("Preserving video aspect ratio within display area.");
                 video::set_preserve_aspect_ratio(true);
             }
+            else if (strcasecmp(s, "-scorebezel_autofit") == 0) {
+                // Hypdroid Android port (#111)
+                printline("Fitting the scoreboard bezel to the real pillarbox bar space.");
+                video::set_scorebezel_autofit(true);
+            }
+            else if (strcasecmp(s, "-aspectbezelfix") == 0) {
+                // Hypdroid Android port (#137)
+                printline("Fitting the bezel to the aspect-corrected video rect.");
+                video::set_aspectbezelfix(true);
+            }
             else if (strcasecmp(s, "-scanline_shunt") == 0) {
                 get_next_word(s, sizeof(s));
                 i = atoi(s);

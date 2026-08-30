@@ -52,6 +52,15 @@ endif()
 add_library( singeproxy ${LIB_SOURCES} ${LIB_HEADERS} )
 target_link_libraries( singeproxy PRIVATE plog io sdl3_deps )
 
+# Lua 5.1's TValue/GCObject representation relies on pointer type-punning
+# that modern compilers' strict-aliasing optimizations can silently break -
+# a well-documented Lua 5.1 build requirement upstream, but never applied
+# here. Independently justified regardless of the FORTIFY workaround below
+# (which upstream now carries itself, gated the same way) - see #35.
+if( CMAKE_SYSTEM_PROCESSOR MATCHES "arm*|aarch64" )
+    target_compile_options( singeproxy PRIVATE -fno-strict-aliasing )
+endif()
+
 if( ANDROID )
     target_compile_options( singeproxy PRIVATE -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 )
 endif()

@@ -171,6 +171,31 @@ enum VideoState : uint64_t
     KMSDRM               = 1ull << 37,
     SCALED               = 1ull << 38,
     VERTICAL_ORIENTATION = 1ull << 39,
+
+    // Hypdroid Android port (#111): opt-in alternative to SCOREBOARD_BEZEL's
+    // default sizing, which scales the bezel to a fixed fraction of the
+    // video's own width regardless of how wide the actual pillarbox bar
+    // next to the video is. When set, and the video is pillarboxed
+    // (g_scaling_rect.x > 0), the bezel is instead sized to fit entirely
+    // within that real bar space. Off by default - existing fixed-ratio
+    // sizing is unchanged unless this is explicitly enabled, so anyone who
+    // already hand-tuned -scorebezel_scale/-scorebezel_position for their
+    // own setup isn't overridden.
+    SCOREBOARD_AUTOFIT   = 1ull << 40,
+
+    // Hypdroid Android port (#137): opt-in per-game fix for a bezel sized to
+    // match the video's own resolution - draws the bezel into
+    // g_scaling_rect (the video's own centered/aspect-corrected rect)
+    // instead of the full screen. An earlier blanket version tied to
+    // PRESERVE_ASPECT alone (#131) broke full-screen-over-video bezel
+    // designs and was reverted (#133); this is deliberately its own
+    // independent opt-in instead. Also required as of hypseus-singe
+    // v3.0.2: upstream's own PRESERVE_ASPECT handling now shrinks
+    // g_bezel_rect to g_scaling_rect automatically for ASPECTWS content
+    // with no opt-out - this flag gates that upstream behavior too (see
+    // vid_render_bezels() in video.cpp), restoring per-game choice instead
+    // of a global side effect of the Preserve Aspect Ratio setting.
+    ASPECT_BEZEL_FIX     = 1ull << 41,
 };
 
 bool init_display();
@@ -233,6 +258,8 @@ void set_scale_linear(bool value);
 void set_force_aspect_ratio(bool bEnabled);
 void set_ignore_aspect_ratio(bool bEnabled);
 void set_preserve_aspect_ratio(bool bEnabled);
+void set_scorebezel_autofit(bool bEnabled); // Hypdroid Android port (#111)
+void set_aspectbezelfix(bool bEnabled); // Hypdroid Android port (#137)
 void set_scanlines(bool value);
 void set_shunt(uint8_t value);
 void set_alpha(uint8_t value);

@@ -2116,6 +2116,22 @@ static int sep_font_unload(lua_State *L)
     return 0;
 }
 
+#ifdef __ANDROID__
+// SDL3's Android backend resolves a bare relative path by checking internal
+// app storage first, then the APK's own bundled assets - it never resolves
+// against -homedir/-datadir/cwd (same root cause already worked around on
+// the Kotlin side for pics/fonts/midi/sound, see HypseusAssets.kt). For
+// unzipped Singe-script games, every non-zip asset load below passes a bare
+// relative path straight from the Lua script to an SDL/TTF/MIX/IMG loader,
+// which hits this exact wall. Resolving against the real homedir here (only
+// when -espath's own explicit rewriting isn't already in play) fixes sound,
+// music, font, and sprite loading for this game category. See #56.
+static std::string sep_resolve_home_path(const std::string &path)
+{
+    return g_homedir.find_file(path, false);
+}
+#endif
+
 static int sep_font_load(lua_State *L)
 {
     int n      = lua_gettop(L);
@@ -2142,6 +2158,11 @@ static int sep_font_load(lua_State *L)
                lua_espath(fontpath.c_str(), filepath, REWRITE_MAXPATH);
                fontpath = filepath;
            }
+#ifdef __ANDROID__
+           else {
+               fontpath = sep_resolve_home_path(fontpath);
+           }
+#endif
 
            temp = TTF_OpenFont(fontpath.c_str(), points);
         }
@@ -3107,6 +3128,12 @@ static int sep_sound_load(lua_State *L)
               lua_espath(filepath.c_str(), tmpPath, REWRITE_MAXPATH);
               filepath = tmpPath;
           }
+#ifdef __ANDROID__
+          else
+          {
+              filepath = sep_resolve_home_path(filepath);
+          }
+#endif
 
           load = SDL_LoadWAV(filepath.c_str(), &temp.audioSpec,
                           &temp.buffer, &temp.length);
@@ -3207,6 +3234,12 @@ static int sep_music_load(lua_State *L)
               lua_espath(mixpath.c_str(), tmpPath, REWRITE_MAXPATH);
               mixpath = tmpPath;
           }
+#ifdef __ANDROID__
+          else
+          {
+              mixpath = sep_resolve_home_path(mixpath);
+          }
+#endif
 
           tmpAud = MIX_LoadAudio(m_mixer, mixpath.c_str(), false);
           tmpTrk = MIX_CreateTrack(m_mixer);
@@ -3702,6 +3735,12 @@ static int sep_sprite_load(lua_State *L)
                lua_espath(filepath.c_str(), tmpPath, REWRITE_MAXPATH);
                filepath = tmpPath;
            }
+#ifdef __ANDROID__
+           else
+           {
+               filepath = sep_resolve_home_path(filepath);
+           }
+#endif
            temp = IMG_LoadAnimation(filepath.c_str());
        }
 
@@ -3816,6 +3855,12 @@ static int sep_sprite_loadframes(lua_State *L)
                    lua_espath(filepath.c_str(), tmpPath, REWRITE_MAXPATH);
                    filepath = tmpPath;
                }
+#ifdef __ANDROID__
+               else
+               {
+                   filepath = sep_resolve_home_path(filepath);
+               }
+#endif
 
                temp = IMG_Load(filepath.c_str());
             }

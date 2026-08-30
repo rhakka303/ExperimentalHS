@@ -50,6 +50,15 @@ using namespace std;
 #endif
 
 #include <SDL3/SDL.h>
+#ifdef ANDROID
+// SDL3's Android JNI glue looks up main() by the symbol name "SDL_main" -
+// SDL_main.h's macro magic renames it at compile time. Desktop builds run
+// main() directly via the OS and don't need this. Unrelated to the old
+// raw exit() issue (#76) - that's now moot, upstream's v3.0.2 restructured
+// main() to a single goto-cleanup/return path with no exit() calls left
+// to wrap. This include is still required on its own merits.
+#include <SDL3/SDL_main.h>
+#endif
 #include <SDL3_image/SDL_image.h>
 #include <SDL3_mixer/SDL_mixer.h>
 
