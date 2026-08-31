@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 cmake_policy(SET CMP0074 NEW)
 
-set(PKG_VERSION "v3.0.1")
+set(PKG_VERSION "v3.0.2")
 
 project(hypseus)
 
@@ -84,23 +84,36 @@ endif()
 
 message(STATUS "Target: ${CMAKE_SYSTEM_NAME} ${CMAKE_TARGET_ARCHITECTURES}")
 
-git_describe(VER_TAG --tags --abbrev=0)
-if("${VER_TAG}" MATCHES "-NOTFOUND")
-    set(VER_TAG  ${PKG_VERSION})
+if(ANDROID)
+    # hypseus-singe is vendored as plain files in the same git repo as
+    # Hypdroid, not a submodule - git_describe below would find Hypdroid's
+    # own release tags (v1.0, v2.0, ...) instead of hypseus-singe's real
+    # version, misreporting it at every startup (confirmed: reported
+    # "v4.0", Hypdroid's own tag, instead of the real v3.0.2). Hypdroid's
+    # own version is already shown separately in its own About screen -
+    # hypseus's startup log should report its own real version, not ours.
+    # PKG_VERSION (above) is always correct for the vendored copy, so skip
+    # git-based detection entirely here rather than trying to make it
+    # disambiguate two unrelated tag namespaces in one shared repo.
+    set(VER_TAG ${PKG_VERSION})
     set(VER_GIT_COUNT "0")
 else()
-    git_revlist(VER_GIT_COUNT --count ${VER_TAG}..HEAD)
+    git_describe(VER_TAG --tags --abbrev=0)
+    if("${VER_TAG}" MATCHES "-NOTFOUND")
+        set(VER_TAG  ${PKG_VERSION})
+        set(VER_GIT_COUNT "0")
+    else()
+        git_revlist(VER_GIT_COUNT --count ${VER_TAG}..HEAD)
+    endif()
 endif()
 string(REGEX REPLACE "^v" "" RESULT ${VER_TAG})
 string(REGEX REPLACE "[-\\.]" ";" RESULT ${RESULT})
-# Hypdroid Android port: this assumed every git tag in the repo has exactly
-# 3 dot/dash-separated parts (MAJOR.MINOR.PATCH). Since hypseus-singe is
-# vendored as plain files in the same git repo (not a submodule), this also
-# picks up Hypdroid's own release tags (e.g. "v1.0", "v2.0" - deliberately
-# 2-part, not 3), which crashed list(GET RESULT 2 ...) once any such tag
-# existed (repo had zero tags before the v1.0 release, so this path was
-# never actually exercised until then). Defensive now - any tag with fewer
-# than 3 parts just gets "0" for the missing ones instead of crashing.
+# hypseus-singe is vendored as plain files in the same git repo as Hypdroid
+# (not a submodule), so git describe --tags --abbrev=0 also picks up
+# Hypdroid's own release tags - deliberately 2-part (v1.0, v2.0), not the
+# 3-part MAJOR.MINOR.PATCH this code otherwise assumes. Unguarded list(GET)
+# crashed (list index: 2 out of range) the moment such a tag existed (#127).
+# Defensive: any tag with fewer than 3 parts gets "0" for the missing ones.
 list(LENGTH RESULT VER_PARTS_COUNT)
 if(VER_PARTS_COUNT GREATER 0)
     list(GET RESULT 0 VER_MAJOR)
