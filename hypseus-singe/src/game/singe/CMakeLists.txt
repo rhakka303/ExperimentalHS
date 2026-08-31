@@ -55,30 +55,15 @@ target_link_libraries( singeproxy PRIVATE plog io sdl3_deps )
 # Lua 5.1's TValue/GCObject representation relies on pointer type-punning
 # that modern compilers' strict-aliasing optimizations can silently break -
 # a well-documented Lua 5.1 build requirement upstream, but never applied
-# here. Tried as a fix for the FORTIFY crash below; kept regardless since
-# it's a real, independently-justified Lua 5.1 build requirement.
+# here. Independently justified regardless of the FORTIFY workaround below
+# (which upstream now carries itself, gated the same way) - see #35.
 if( CMAKE_SYSTEM_PROCESSOR MATCHES "arm*|aarch64" )
     target_compile_options( singeproxy PRIVATE -fno-strict-aliasing )
 endif()
 
-# FORTIFY_SOURCE false positive, not real corruption - proven by direct
-# memory inspection (see #35), not assumed. traversetable()'s
-# strchr(svalue(mode), ...) (lgc.c) aborted with Bionic's "FORTIFY: strchr:
-# prevented read past end of buffer" even though the actual string data was
-# 100% valid ("kv\0", correctly null-terminated exactly where its own
-# declared length said it would be - confirmed by dumping the live buffer
-# from a running crash). Root cause: TString (lstring.h) uses the classic
-# pre-C99 "struct hack" - one malloc(sizeof(TString) + len + 1), then
-# getstr(ts) = (char*)(ts + 1) to point past the struct header at the
-# string data. The compiler's __builtin_object_size() (what _FORTIFY_SOURCE
-# is built on) can't see through that pointer arithmetic to know the real
-# allocation is bigger than sizeof(TString) alone, so it under-reports the
-# buffer's remaining size and Bionic's fortified strchr aborts on reads
-# that are actually completely safe. This is a known category of false
-# positive for any C codebase using this allocation pattern, not specific
-# to Lua - disabling _FORTIFY_SOURCE for just this target is the correct
-# fix, not a suppressed real bug.
-target_compile_options( singeproxy PRIVATE -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 )
+if( ANDROID )
+    target_compile_options( singeproxy PRIVATE -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 )
+endif()
 
 if(WIN32)
     target_link_libraries( singeproxy PRIVATE ws2_32 sdl3_deps )

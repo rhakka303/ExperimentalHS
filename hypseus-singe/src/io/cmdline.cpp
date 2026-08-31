@@ -664,9 +664,8 @@ bool parse_cmd_line(int argc, char **argv)
                 }
             }
             // Ignore some deprecated arguments (Rather than error)
-            else if (strcasecmp(s, "-nolinear_scale") == 0 ||
-                         strcasecmp(s, "-fullscale") == 0 ||
-                             strcasecmp(s, "-fullscreen_window") == 0 ) {
+            else if (strcasecmp(s, "-sound_buffer") == 0 ||
+                         strcasecmp(s, "-fullscreen_window") == 0 ) {
                  char e[460];
                  snprintf(e, sizeof(e), "NOTE : Ignoring deprecated argument: %s", s);
                  printline(e);
@@ -871,10 +870,6 @@ bool parse_cmd_line(int argc, char **argv)
             } else if (strcasecmp(s, "-nosound") == 0) {
                 sound::set_enabled_status(false);
                 printline("Disabling sound...");
-            } else if (strcasecmp(s, "-sound_buffer") == 0) {
-                get_next_word(s, sizeof(s));
-                Uint16 sbsize = (Uint16)atoi(s);
-                sound::set_buf_size(sbsize);
             } else if (strcasecmp(s, "-volume_vldp") == 0) {
                 get_next_word(s, sizeof(s));
                 unsigned int uVolume = atoi(s);
@@ -971,21 +966,6 @@ bool parse_cmd_line(int argc, char **argv)
                     printerror("Scale values: 1-25");
                     result = false;
                 }
-            }
-            else if (strcasecmp(s, "-scorebezel_autofit") == 0) {
-                // Hypdroid Android port (#111)
-                printline("Fitting the scoreboard bezel to the real pillarbox bar space.");
-                video::set_scorebezel_autofit(true);
-            }
-            else if (strcasecmp(s, "-overlaybezel") == 0) {
-                // Hypdroid Android port (#117)
-                printline("Rendering the Singe overlay on top of custom bezel art.");
-                video::set_overlaybezel(true);
-            }
-            else if (strcasecmp(s, "-aspectbezelfix") == 0) {
-                // Hypdroid Android port (#137)
-                printline("Fitting the bezel to the aspect-corrected video rect.");
-                video::set_aspectbezelfix(true);
             }
             else if (strcasecmp(s, "-scorepanel") == 0) {
                 lair *game_lair_or_sa = dynamic_cast<lair *>(g_game);
@@ -1197,9 +1177,18 @@ bool parse_cmd_line(int argc, char **argv)
                 video::set_force_aspect_ratio(false);
             }
             else if (strcasecmp(s, "-preserve_aspect_ratio") == 0) {
-                // Hypdroid Android port (#109)
-                printline("Preserving the video's real aspect ratio, adding letterbox/pillarbox bars as needed.");
+                printline("Preserving video aspect ratio within display area.");
                 video::set_preserve_aspect_ratio(true);
+            }
+            else if (strcasecmp(s, "-scorebezel_autofit") == 0) {
+                // Hypdroid Android port (#111)
+                printline("Fitting the scoreboard bezel to the real pillarbox bar space.");
+                video::set_scorebezel_autofit(true);
+            }
+            else if (strcasecmp(s, "-aspectbezelfix") == 0) {
+                // Hypdroid Android port (#137)
+                printline("Fitting the bezel to the aspect-corrected video rect.");
+                video::set_aspectbezelfix(true);
             }
             else if (strcasecmp(s, "-scanline_shunt") == 0) {
                 get_next_word(s, sizeof(s));
@@ -1470,6 +1459,10 @@ bool parse_cmd_line(int argc, char **argv)
             // exits
             else if (strcasecmp(s, "-stoponquit") == 0) {
                 g_ldp->set_stop_on_quit(true);
+            }
+            // Draw overlay over bezels
+            else if (strcasecmp(s, "-overlaybezel") == 0) {
+                video::set_overlaybezel(true, true);
             }
             // Use old style overlays (lair, ace, tq)
             else if (strcasecmp(s, "-original_overlay") == 0) {

@@ -76,11 +76,11 @@ android {
         // package rename would be churn with no visible effect.
         //
         // Version numbers deliberately track whatever mainline Hypdroid
-        // this repo was last synced with (currently v4.0), so it's always
+        // this repo was last synced with (currently v5.0), so it's always
         // obvious which upstream baseline any experimental build sits on.
         applicationId "com.exphs"
-        versionCode 4
-        versionName "4.0"
+        versionCode 5
+        versionName "5.0"
         externalNativeBuild {
             cmake {
                 // android-28 matches what Phase B's vcpkg triplet and the

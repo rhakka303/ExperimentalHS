@@ -142,77 +142,60 @@ enum VideoState : uint64_t
 
     YUV_BLUE             = 1ull << 16,
 
-    VIDEO_RESIZED        = 1ull << 17,
+    RESIZED_MEDIA        = 1ull << 17,
+    ROTATED_MEDIA        = 1ull << 18,
 
-    BLOCK_DRIVER_OVERLAY = 1ull << 18,
+    BLOCK_DRIVER_OVERLAY = 1ull << 19,
 
-    ENHANCE_OVERLAY      = 1ull << 19,
-    OVERLAY_DYNAMIC      = 1ull << 20,
-    LEGACY_OVERLAY       = 1ull << 21,
-    OVERLAY_WHITE        = 1ull << 22,
+    ENHANCE_OVERLAY      = 1ull << 20,
+    OVERLAY_DYNAMIC      = 1ull << 21,
+    LEGACY_OVERLAY       = 1ull << 22,
+    OVERLAY_WHITE        = 1ull << 23,
+    OVERLAY_LAST         = 1ull << 24,
+    BEZEL_OVERLAY        = 1ull << 25,
 
-    FORCE_ASPECT         = 1ull << 23,
-    IGNORE_ASPECT        = 1ull << 24,
+    FORCE_ASPECT         = 1ull << 26,
+    IGNORE_ASPECT        = 1ull << 27,
+    PRESERVE_ASPECT      = 1ull << 28,
 
-    BEZEL_LOAD           = 1ull << 25,
-    BEZEL_TOGGLE         = 1ull << 26,
-    BEZEL_REVERSE        = 1ull << 27,
-    KEYBOARD_BEZEL       = 1ull << 28,
-    SCOREBOARD_BEZEL     = 1ull << 29,
+    BEZEL_LOAD           = 1ull << 29,
+    BEZEL_TOGGLE         = 1ull << 30,
+    BEZEL_REVERSE        = 1ull << 31,
+    KEYBOARD_BEZEL       = 1ull << 32,
+    SCOREBOARD_BEZEL     = 1ull << 33,
 
-    AUX_BEZEL            = 1ull << 30,
-    ANNUN_LAMPS          = 1ull << 31,
-    DED_ANNUN_BEZEL      = 1ull << 32,
+    AUX_BEZEL            = 1ull << 34,
+    ANNUN_LAMPS          = 1ull << 35,
+    DED_ANNUN_BEZEL      = 1ull << 36,
 
-    KMSDRM               = 1ull << 33,
-    SCALED               = 1ull << 34,
-    VERTICAL_ORIENTATION = 1ull << 35,
-
-    // Hypdroid Android port (#109): opt-in alternative to every other path
-    // in format_fullscreen_render(), all of which compute a destination
-    // rect matching the *screen's* own aspect ratio. When set, the video's
-    // real detected aspect ratio (g_probe_width/g_probe_height) is fit
-    // entirely within the screen instead, with letterbox/pillarbox bars on
-    // whichever axis has room to spare. Off by default - existing
-    // screen-fill behavior is unchanged unless this is explicitly enabled.
-    PRESERVE_ASPECT      = 1ull << 36,
+    KMSDRM               = 1ull << 37,
+    SCALED               = 1ull << 38,
+    VERTICAL_ORIENTATION = 1ull << 39,
 
     // Hypdroid Android port (#111): opt-in alternative to SCOREBOARD_BEZEL's
     // default sizing, which scales the bezel to a fixed fraction of the
-    // video's own width (g_bezel_scalewidth = w / scale) regardless of how
-    // wide the actual pillarbox bar next to the video is. When set, and the
-    // video is pillarboxed (g_scaling_rect.x > 0), the bezel is instead sized
-    // to fit entirely within that real bar space, so it stops cropping into
-    // or bleeding past the video's actual edge. Off by default - existing
-    // fixed-ratio sizing is unchanged unless this is explicitly enabled, so
-    // anyone who already hand-tuned -scorebezel_scale/-scorebezel_position
-    // for their own setup isn't overridden.
-    SCOREBOARD_AUTOFIT   = 1ull << 37,
-
-    // Hypdroid Android port (#117): opt-in redraw of the Singe overlay
-    // (g_overlay_texture, everything a game draws via spriteDraw - score,
-    // lives, skip icon, move arrows, etc.) a second time after
-    // vid_render_bezels(), so it renders on top of custom bezel art instead
-    // of being buried under it. The overlay is normally composited with the
-    // video early in vid_blit(), well before the bezel draws over the whole
-    // screen; this doesn't change that first draw, it just repeats it later
-    // at the same position. Off by default - existing behavior (overlay
-    // hidden under any custom bezel) is unchanged unless this is explicitly
-    // enabled. Unrelated to SCOREBOARD_BEZEL/the Daphne-native scoreboard
-    // system, which is a completely separate rendering path.
-    OVERLAY_BEZEL        = 1ull << 38,
+    // video's own width regardless of how wide the actual pillarbox bar
+    // next to the video is. When set, and the video is pillarboxed
+    // (g_scaling_rect.x > 0), the bezel is instead sized to fit entirely
+    // within that real bar space. Off by default - existing fixed-ratio
+    // sizing is unchanged unless this is explicitly enabled, so anyone who
+    // already hand-tuned -scorebezel_scale/-scorebezel_position for their
+    // own setup isn't overridden.
+    SCOREBOARD_AUTOFIT   = 1ull << 40,
 
     // Hypdroid Android port (#137): opt-in per-game fix for a bezel sized to
-    // match the video's own resolution (e.g. a 1920x1080 bezel for a
-    // 1920x1080 video) - draws the bezel into g_scaling_rect (the video's
-    // own centered/aspect-corrected rect) instead of the full screen, same
-    // logic #131 tried as a blanket PRESERVE_ASPECT-tied change and had to
-    // be reverted (#133) since it broke full-screen-over-video bezel
-    // designs. This time gated behind its own independent flag, so it's an
-    // explicit per-game choice instead of an automatic one - off by
-    // default, existing full-screen bezel behavior unchanged unless this
-    // AND PRESERVE_ASPECT are both explicitly enabled.
-    ASPECT_BEZEL_FIX     = 1ull << 39,
+    // match the video's own resolution - draws the bezel into
+    // g_scaling_rect (the video's own centered/aspect-corrected rect)
+    // instead of the full screen. An earlier blanket version tied to
+    // PRESERVE_ASPECT alone (#131) broke full-screen-over-video bezel
+    // designs and was reverted (#133); this is deliberately its own
+    // independent opt-in instead. Also required as of hypseus-singe
+    // v3.0.2: upstream's own PRESERVE_ASPECT handling now shrinks
+    // g_bezel_rect to g_scaling_rect automatically for ASPECTWS content
+    // with no opt-out - this flag gates that upstream behavior too (see
+    // vid_render_bezels() in video.cpp), restoring per-game choice instead
+    // of a global side effect of the Preserve Aspect Ratio setting.
+    ASPECT_BEZEL_FIX     = 1ull << 41,
 };
 
 bool init_display();
@@ -262,8 +245,10 @@ void set_forcetop(bool value);
 void set_software_render(bool value);
 SDL_TextureAccess get_textureaccess();
 void set_textureaccess(SDL_TextureAccess value);
+void set_overlayscalemode(bool value);
 void set_grabmouse(bool value);
 void toggle_grabmouse();
+void toggle_bilinearscale();
 void set_vsync(bool value);
 void set_intro(bool value);
 void set_logo(bool value);
@@ -272,9 +257,8 @@ void set_fullscreen(bool value);
 void set_scale_linear(bool value);
 void set_force_aspect_ratio(bool bEnabled);
 void set_ignore_aspect_ratio(bool bEnabled);
-void set_preserve_aspect_ratio(bool bEnabled); // Hypdroid Android port (#109)
+void set_preserve_aspect_ratio(bool bEnabled);
 void set_scorebezel_autofit(bool bEnabled); // Hypdroid Android port (#111)
-void set_overlaybezel(bool bEnabled); // Hypdroid Android port (#117)
 void set_aspectbezelfix(bool bEnabled); // Hypdroid Android port (#137)
 void set_scanlines(bool value);
 void set_shunt(uint8_t value);
@@ -330,12 +314,13 @@ void set_yuv_rect(float, float, float, float);
 void reset_yuv_rect();
 
 void set_legacy_overlay(bool);
+uint64_t set_overlaybezel(bool, bool);
 
 void set_vertical_orientation(bool);
 
 bool draw_annunciator(int which);
 
-bool get_bezelstatus();
+uint64_t get_bezelstatus();
 
 void set_queue_screenshot(bool bEnabled);
 
