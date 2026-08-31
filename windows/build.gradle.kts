@@ -1,6 +1,7 @@
-// #7 - desktop project skeleton. Kept deliberately minimal per the story's
-// non-goals: one dependency (compose.desktop.currentOs), no extras added
-// "for later".
+// #7 - desktop project skeleton, kept deliberately minimal.
+// #11 - compose.material3 added: needed for the actual milestone UI
+// (a plain game list), not speculative. compose.desktop.currentOs alone
+// does not pull it in.
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 
 plugins {
@@ -19,6 +20,7 @@ repositories {
 
 dependencies {
     implementation(compose.desktop.currentOs)
+    implementation(compose.material3)
 }
 
 compose.desktop {
