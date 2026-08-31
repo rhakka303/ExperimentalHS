@@ -2,6 +2,11 @@
 .gradle/
 .idea/
 local.properties
+
+# #7 - windows/gradle.properties holds this machine's JDK path
+# (org.gradle.java.home), needed only when the default JDK lacks jpackage.
+# Machine-specific, same category as local.properties above.
+windows/gradle.properties
 *.iml
 build/
 captures/
