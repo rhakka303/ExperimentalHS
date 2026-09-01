@@ -1267,48 +1267,35 @@ private fun ControlsScreen(installRoot: File, onBack: () -> Unit) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        OutlinedCard(modifier = Modifier.weight(1f).fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp).fillMaxSize()) {
-                Text(mode, style = MaterialTheme.typography.titleMedium)
-                Spacer(modifier = Modifier.height(8.dp))
+        Text(mode, style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(8.dp))
 
-                when {
-                    iniText == null -> Text(
-                        "hypinput_gamepad.ini not found.",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    // #46 - Keyboard is the only mode with real content
-                    // this story. #47/#48/#49 add the rest.
-                    mode == "Keyboard" -> {
-                        val listState = rememberLazyListState()
-                        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                            LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
-                                items(rows, key = { it.keyName }) { row ->
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp, horizontal = 4.dp),
-                                    ) {
-                                        Text(row.keyName, modifier = Modifier.weight(1f))
-                                        val isListening = listeningForKeyName == row.keyName
-                                        val label = if (row.key1 == "0") "Key: None" else "Key: ${row.key1}"
-                                        Button(onClick = { listeningForKeyName = row.keyName }) {
-                                            Text(if (isListening) "Press a key…" else label)
-                                        }
-                                    }
-                                }
-                            }
-                            VerticalScrollbar(
-                                modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
-                                adapter = rememberScrollbarAdapter(listState),
-                            )
-                        }
-                    }
-                    else -> Text(
-                        "Coming soon.",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
+        when {
+            iniText == null -> Text(
+                "hypinput_gamepad.ini not found.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            // #46 - two SEPARATE cards side by side, not one card with an
+            // internal 2-column grid - matching the actual layout
+            // convention every other settings screen in this app uses
+            // (App Settings, Video Settings: two independent OutlinedCards
+            // in a Row), per the owner's explicit correction. Each card
+            // gets its own scroll state/scrollbar, not one shared list
+            // split visually into two columns.
+            mode == "Keyboard" -> {
+                val half = (rows.size + 1) / 2
+                Row(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    KeyboardBindingsCard(rows = rows.take(half), listeningForKeyName = listeningForKeyName, onRowClick = { listeningForKeyName = it }, modifier = Modifier.weight(1f))
+                    KeyboardBindingsCard(rows = rows.drop(half), listeningForKeyName = listeningForKeyName, onRowClick = { listeningForKeyName = it }, modifier = Modifier.weight(1f))
                 }
             }
+            else -> Text(
+                "Coming soon.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
         }
     }
 
@@ -1342,6 +1329,53 @@ private fun ControlsScreen(installRoot: File, onBack: () -> Unit) {
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * #46 - one of the two side-by-side cards Keyboard mode splits its rows
+ * across (see ControlsScreen's own comment for why this is two real
+ * cards, not one card with an internal grid). Independently scrollable,
+ * own scrollbar - each half is its own list, not two visual columns of
+ * one shared list.
+ */
+@Composable
+private fun KeyboardBindingsCard(
+    rows: List<GamepadRow>,
+    listeningForKeyName: String?,
+    onRowClick: (String) -> Unit,
+    modifier: Modifier,
+) {
+    val listState = rememberLazyListState()
+    OutlinedCard(modifier = modifier.fillMaxHeight()) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            // VerticalScrollbar below is an overlay, not reserved layout
+            // space - end padding keeps row content from sitting
+            // underneath it.
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize().padding(12.dp),
+                contentPadding = PaddingValues(end = 20.dp),
+            ) {
+                items(rows, key = { it.keyName }) { row ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp, horizontal = 4.dp),
+                    ) {
+                        Text(row.keyName, modifier = Modifier.weight(1f))
+                        val isListening = listeningForKeyName == row.keyName
+                        val label = if (row.key1 == "0") "Key: None" else "Key: ${row.key1}"
+                        Button(onClick = { onRowClick(row.keyName) }) {
+                            Text(if (isListening) "Press a key…" else label)
+                        }
+                    }
+                }
+            }
+            VerticalScrollbar(
+                modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
+                adapter = rememberScrollbarAdapter(listState),
+            )
         }
     }
 }
