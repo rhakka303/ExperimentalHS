@@ -4,6 +4,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.HoverInteraction
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -36,6 +40,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
@@ -51,6 +56,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -508,18 +514,17 @@ private fun GameCarousel(
                         Icon(Icons.Filled.Close, contentDescription = "Quit", tint = iconTint)
                     }
                 }
-                // #72 - real visible focus indicator, same green
-                // Android's own Theme.kt already established for exactly
-                // this purpose (D-pad focus ring) - reused rather than
-                // inventing a new color, now that this project has real
-                // keyboard/gamepad focus navigation of its own to show.
+                // #76 follow-up - IconButton already has its own real
+                // circular hover/press state layer; see
+                // rememberFocusInteractionSource's own doc comment for
+                // why gamepad/keyboard focus now drives that same layer
+                // rather than painting a second highlight on top of it.
                 IconButton(
                     onClick = onOpenSettings,
-                    modifier = if (carouselFocus == CarouselFocus.GEAR) {
-                        Modifier.border(3.dp, HypdroidGreenAccent, CircleShape)
-                    } else {
-                        Modifier
-                    },
+                    interactionSource = rememberFocusInteractionSource(
+                        isFocused = carouselFocus == CarouselFocus.GEAR,
+                        onRealHover = { carouselFocus = CarouselFocus.GEAR },
+                    ),
                 ) {
                     Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = iconTint)
                 }
@@ -1006,19 +1011,106 @@ private fun GameOptionsScreen(game: Game, launcherFolder: File?, onOpenGameHack:
  */
 @Composable
 private fun CoverArtPickerDialog(onSelect: (CoverArtType) -> Unit, onDismiss: () -> Unit) {
+    // #76 - this dialog is now reachable via A/Enter on a focused Change
+    // button (AppSettingsScreen), not just a mouse click - it needs its
+    // own real navigation regardless of how it was opened. Up/Down move
+    // between the 4 real options, A/Enter selects (same as clicking),
+    // B/Escape cancels (same as clicking Cancel) - matching the mouse
+    // behavior already there rather than adding a second interaction
+    // model.
+    var focusIndex by remember { mutableStateOf(0) }
+    val options = CoverArtType.entries
+    val focusRequester = remember { FocusRequester() }
+    var hasRequestedInitialFocus by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        GamepadInputBus.events.collect { action ->
+            when (action) {
+                GamepadAction.UP -> focusIndex = (focusIndex - 1).coerceAtLeast(0)
+                GamepadAction.OPTIONS -> focusIndex = (focusIndex + 1).coerceAtMost(options.lastIndex)
+                GamepadAction.LAUNCH -> onSelect(options[focusIndex.coerceIn(0, options.lastIndex)])
+                GamepadAction.BACK -> onDismiss()
+                GamepadAction.LEFT, GamepadAction.RIGHT -> Unit
+            }
+        }
+    }
+
     Dialog(onDismissRequest = onDismiss) {
         Surface(shape = RoundedCornerShape(16.dp), tonalElevation = 4.dp) {
-            Column(modifier = Modifier.padding(24.dp)) {
+            Column(
+                modifier = Modifier
+                    .padding(24.dp)
+                    .focusRequester(focusRequester)
+                    .onGloballyPositioned {
+                        if (!hasRequestedInitialFocus) {
+                            hasRequestedInitialFocus = true
+                            try {
+                                focusRequester.requestFocus()
+                            } catch (e: IllegalStateException) {
+                                // see #17's identical guard on GameCarousel
+                            }
+                        }
+                    }
+                    .focusable()
+                    .onKeyEvent { event ->
+                        if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+                        when (event.key) {
+                            Key.DirectionUp -> {
+                                focusIndex = (focusIndex - 1).coerceAtLeast(0)
+                                true
+                            }
+                            Key.DirectionDown -> {
+                                focusIndex = (focusIndex + 1).coerceAtMost(options.lastIndex)
+                                true
+                            }
+                            Key.Enter, Key.NumPadEnter, Key.CtrlLeft -> {
+                                onSelect(options[focusIndex.coerceIn(0, options.lastIndex)])
+                                true
+                            }
+                            Key.Escape -> {
+                                onDismiss()
+                                true
+                            }
+                            else -> false
+                        }
+                    },
+            ) {
                 Text("Cover Art", style = MaterialTheme.typography.headlineSmall)
                 Spacer(modifier = Modifier.height(16.dp))
-                CoverArtType.entries.forEach { type ->
+                options.forEachIndexed { index, type ->
                     Text(
                         type.name,
                         style = MaterialTheme.typography.bodyLarge,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onSelect(type) }
-                            .padding(vertical = 12.dp),
+                            // #76 follow-up - real, live feedback: the
+                            // green border (this app's focus indicator
+                            // everywhere else) looked out of sync sitting
+                            // next to Compose's own default grey mouse-
+                            // hover highlight on the row below it. Rather
+                            // than run two different-looking indicators
+                            // side by side, keyboard/gamepad focus now
+                            // uses that same grey, not a second visual
+                            // language.
+                            //
+                            // clip() before clickable() so that same
+                            // mouse-hover indication is bounded by this
+                            // row's own rounded shape rather than painting
+                            // square across the full row.
+                            .clip(MaterialTheme.shapes.extraSmall)
+                            .background(
+                                if (index == focusIndex.coerceIn(0, options.lastIndex)) {
+                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f)
+                                } else {
+                                    Color.Transparent
+                                },
+                                MaterialTheme.shapes.extraSmall,
+                            )
+                            // #76 follow-up - mouse hover moves focusIndex
+                            // here too, same reasoning as focusableClickable's
+                            // own doc comment.
+                            .focusableClickable(onHover = { focusIndex = index }, onClick = { onSelect(type) })
+                            .padding(horizontal = 8.dp, vertical = 12.dp),
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
@@ -1118,6 +1210,75 @@ private fun GameHackScreen(game: Game, launcherFolder: File?, onBack: () -> Unit
     }
 }
 
+// #76 follow-up - real, live feedback: mouse hover and keyboard/gamepad
+// focus were two genuinely independent states (each could highlight a
+// different control at once, "out of sync") now that every navigable
+// screen shows its own focus highlight. Rather than run both, mouse
+// hover becomes a third input source feeding the exact same shared focus
+// state the keyboard/gamepad already drive - same "shared functions
+// across input sources" pattern #69/#72 established, just extended to a
+// third source. Compose's own default hover/press indication is
+// suppressed (indication = null) since this app's own focusBorder/
+// background highlight is the single visual language for "this is
+// focused" now, matching what the mouse itself also causes via onHover.
+@Composable
+private fun Modifier.focusableClickable(onHover: () -> Unit, onClick: () -> Unit): Modifier {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isHovered by interactionSource.collectIsHoveredAsState()
+    LaunchedEffect(isHovered) {
+        if (isHovered) onHover()
+    }
+    return this
+        .hoverable(interactionSource)
+        .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
+}
+
+// #76 follow-up - real, live question: "why is controller using a
+// separate system from mouse?" It shouldn't, for a Switch/Button/
+// IconButton - each is a real Material3 component with its own built-in
+// hover/press state layer that real mouse hover already drives correctly
+// on its own. Layering a second, custom-painted highlight on top for
+// gamepad/keyboard focus (this app's own separate app-level focus
+// concept, not something Compose's real interaction system knows about)
+// is exactly what produced the double-circle bug just above.
+//
+// This returns ONE interactionSource, handed directly to the real
+// component (Switch(interactionSource = ...), etc.) so mouse and
+// controller drive the exact same native visual, not two: real pointer
+// hover already writes into it via the component's own internals; this
+// additionally writes a synthetic Enter/Exit into that same source
+// whenever this app's own isFocused flag says gamepad/keyboard focus is
+// here, so the same native state layer lights up for that too. Reading
+// hover back off this same source (collectIsHoveredAsState) is what lets
+// real mouse hover feed back into isFocused/onRealHover - one shared
+// state in both directions, not a parallel one.
+@Composable
+private fun rememberFocusInteractionSource(isFocused: Boolean, onRealHover: () -> Unit): MutableInteractionSource {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isHovered by interactionSource.collectIsHoveredAsState()
+    LaunchedEffect(isHovered) {
+        if (isHovered) onRealHover()
+    }
+    var activeSyntheticHover by remember { mutableStateOf<HoverInteraction.Enter?>(null) }
+    LaunchedEffect(isFocused) {
+        if (isFocused && activeSyntheticHover == null) {
+            val enter = HoverInteraction.Enter()
+            interactionSource.emit(enter)
+            activeSyntheticHover = enter
+        } else if (!isFocused) {
+            activeSyntheticHover?.let { interactionSource.emit(HoverInteraction.Exit(it)) }
+            activeSyntheticHover = null
+        }
+    }
+    return interactionSource
+}
+
+// #76 - the real, ordered flat-list stops AppSettingsScreen can have -
+// GLOBAL_COVER_ART_CHANGE and DEFAULT_ART_SWITCH only ever appear in the
+// real visible list while their parent toggle is on, matching the
+// screen's own real conditional layout.
+private enum class AppSettingsControl { GLOBAL_COVER_ART_SWITCH, GLOBAL_COVER_ART_CHANGE, BACKGROUND_ART_SWITCH, DEFAULT_ART_SWITCH }
+
 /**
  * #31 - replaces #24's stub with real content, matching the real Android
  * AppSettingsScreen exactly (confirmed against two live screenshots from
@@ -1138,6 +1299,77 @@ private fun AppSettingsScreen(launcherFolder: File?, onBack: () -> Unit) {
     fun persist(updated: AppSettings) {
         settings = updated
         if (launcherFolder != null) saveAppSettings(launcherFolder, updated)
+    }
+
+    // #76 - one flat, ordered list of every real focusable control on
+    // this screen, not per-card focus - Global Cover Art's Change button
+    // and Background Art's Default Art switch only exist in this list
+    // while their parent toggle is actually on, matching when they're
+    // actually visible. Up/Down move an index through this list rather
+    // than a 2D grid (#73's own model) - these controls read top-to-
+    // bottom within each card, not left-right between cards.
+    val controls = remember(settings.globalCoverArtEnabled, settings.backgroundArtEnabled) {
+        buildList {
+            add(AppSettingsControl.GLOBAL_COVER_ART_SWITCH)
+            if (settings.globalCoverArtEnabled) add(AppSettingsControl.GLOBAL_COVER_ART_CHANGE)
+            add(AppSettingsControl.BACKGROUND_ART_SWITCH)
+            if (settings.backgroundArtEnabled) add(AppSettingsControl.DEFAULT_ART_SWITCH)
+        }
+    }
+    var focusIndex by remember { mutableStateOf(0) }
+    val focusedControl = controls.getOrNull(focusIndex.coerceIn(0, controls.lastIndex))
+    // #76 follow-up - real, live bug: LaunchedEffect(Unit) below launches
+    // its coroutine exactly once and never restarts (its key never
+    // changes), so it keeps running the *first* composition's
+    // activateFocused() forever - which had closed over that first
+    // composition's own focusedControl (a plain val, frozen at whichever
+    // control was focused when this screen first opened). Up/Down still
+    // worked because they write straight into the shared focusIndex
+    // MutableState object, which any closure reads live regardless of
+    // which "generation" it's from - but activateFocused() was reading a
+    // frozen snapshot, so gamepad A kept acting on the *original* focus
+    // no matter where Up/Down had since moved the visible highlight.
+    // rememberUpdatedState gives activateFocused() a stable indirection
+    // that always resolves to the latest value, even from a stale
+    // closure. (Keyboard's own onKeyEvent never had this problem - it's
+    // a fresh lambda every recomposition, not a long-lived coroutine.)
+    val currentFocusedControl by rememberUpdatedState(focusedControl)
+
+    fun moveFocusUp() {
+        focusIndex = (focusIndex - 1).coerceAtLeast(0)
+    }
+    fun moveFocusDown() {
+        focusIndex = (focusIndex + 1).coerceAtMost(controls.lastIndex)
+    }
+    fun activateFocused() {
+        when (currentFocusedControl) {
+            AppSettingsControl.GLOBAL_COVER_ART_SWITCH -> persist(settings.copy(globalCoverArtEnabled = !settings.globalCoverArtEnabled))
+            AppSettingsControl.GLOBAL_COVER_ART_CHANGE -> showGlobalCoverArtPicker = true
+            AppSettingsControl.BACKGROUND_ART_SWITCH -> persist(settings.copy(backgroundArtEnabled = !settings.backgroundArtEnabled))
+            AppSettingsControl.DEFAULT_ART_SWITCH -> persist(settings.copy(defaultArtEnabled = !settings.defaultArtEnabled))
+            null -> Unit
+        }
+    }
+
+    // #69's own framing, reused: a second real input source feeding the
+    // exact same actions the keyboard onKeyEvent below already handles.
+    // Real bug caught before it shipped: the Dialog below is an
+    // additional composable, not a replacement - this screen's own
+    // Column (and this LaunchedEffect) stays composed and still
+    // collecting underneath it, so without the showGlobalCoverArtPicker
+    // guard, a single button press would move both this screen's flat-
+    // list focus AND the dialog's own focus at the same time.
+    LaunchedEffect(Unit) {
+        GamepadInputBus.events.collect { action ->
+            if (showGlobalCoverArtPicker) return@collect
+            when (action) {
+                GamepadAction.UP -> moveFocusUp()
+                GamepadAction.OPTIONS -> moveFocusDown()
+                GamepadAction.LAUNCH -> activateFocused()
+                GamepadAction.BACK -> onBack()
+                GamepadAction.LEFT, GamepadAction.RIGHT -> Unit
+            }
+        }
     }
 
     // Escape matches #19/#20's established convention on every other
@@ -1162,11 +1394,25 @@ private fun AppSettingsScreen(launcherFolder: File?, onBack: () -> Unit) {
             }
             .focusable()
             .onKeyEvent { event ->
-                if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
-                    onBack()
-                    true
-                } else {
-                    false
+                if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+                when (event.key) {
+                    Key.Escape -> {
+                        onBack()
+                        true
+                    }
+                    Key.Enter, Key.NumPadEnter, Key.CtrlLeft -> {
+                        activateFocused()
+                        true
+                    }
+                    Key.DirectionUp -> {
+                        moveFocusUp()
+                        true
+                    }
+                    Key.DirectionDown -> {
+                        moveFocusDown()
+                        true
+                    }
+                    else -> false
                 }
             },
     ) {
@@ -1194,17 +1440,36 @@ private fun AppSettingsScreen(launcherFolder: File?, onBack: () -> Unit) {
                         Switch(
                             checked = settings.globalCoverArtEnabled,
                             onCheckedChange = { persist(settings.copy(globalCoverArtEnabled = it)) },
+                            interactionSource = rememberFocusInteractionSource(
+                                isFocused = focusedControl == AppSettingsControl.GLOBAL_COVER_ART_SWITCH,
+                                onRealHover = { focusIndex = controls.indexOf(AppSettingsControl.GLOBAL_COVER_ART_SWITCH) },
+                            ),
                         )
                     }
                     if (settings.globalCoverArtEnabled) {
-                        Spacer(modifier = Modifier.height(8.dp))
+                        // #76 follow-up - real, live, repeated bug report:
+                        // clicking Change was toggling the Switch above it
+                        // off instead. Switch's own real minimum touch
+                        // target is 48dp tall - noticeably bigger than its
+                        // ~32dp visible track - so an 8dp gap wasn't
+                        // enough clearance before this row starts; a click
+                        // aimed at Change could still land inside the
+                        // Switch's own (invisible) hit box. 24dp gives
+                        // real clearance past that inflated area.
+                        Spacer(modifier = Modifier.height(24.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 settings.globalCoverArtType.name,
                                 style = MaterialTheme.typography.bodyMedium,
                                 modifier = Modifier.weight(1f),
                             )
-                            Button(onClick = { showGlobalCoverArtPicker = true }) { Text("Change") }
+                            Button(
+                                onClick = { showGlobalCoverArtPicker = true },
+                                interactionSource = rememberFocusInteractionSource(
+                                    isFocused = focusedControl == AppSettingsControl.GLOBAL_COVER_ART_CHANGE,
+                                    onRealHover = { focusIndex = controls.indexOf(AppSettingsControl.GLOBAL_COVER_ART_CHANGE) },
+                                ),
+                            ) { Text("Change") }
                         }
                     }
                 }
@@ -1223,6 +1488,10 @@ private fun AppSettingsScreen(launcherFolder: File?, onBack: () -> Unit) {
                         Switch(
                             checked = settings.backgroundArtEnabled,
                             onCheckedChange = { persist(settings.copy(backgroundArtEnabled = it)) },
+                            interactionSource = rememberFocusInteractionSource(
+                                isFocused = focusedControl == AppSettingsControl.BACKGROUND_ART_SWITCH,
+                                onRealHover = { focusIndex = controls.indexOf(AppSettingsControl.BACKGROUND_ART_SWITCH) },
+                            ),
                         )
                     }
                     // #31 - Default Art is a real second toggle, only shown
@@ -1231,7 +1500,13 @@ private fun AppSettingsScreen(launcherFolder: File?, onBack: () -> Unit) {
                     // (every game gets bg/default.png), not a missing-file
                     // fallback (see #27's backgroundArtFile doc comment).
                     if (settings.backgroundArtEnabled) {
-                        Spacer(modifier = Modifier.height(8.dp))
+                        // #76 follow-up - same real touch-target-overlap
+                        // risk as Global Cover Art's own Switch/Change gap
+                        // above (both Switches here have the same 48dp
+                        // touch target vs ~32dp visible track) - matched
+                        // preventively even though this specific pair
+                        // wasn't the one reported.
+                        Spacer(modifier = Modifier.height(24.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text("Default Art", style = MaterialTheme.typography.titleMedium)
@@ -1243,6 +1518,10 @@ private fun AppSettingsScreen(launcherFolder: File?, onBack: () -> Unit) {
                             Switch(
                                 checked = settings.defaultArtEnabled,
                                 onCheckedChange = { persist(settings.copy(defaultArtEnabled = it)) },
+                                interactionSource = rememberFocusInteractionSource(
+                                    isFocused = focusedControl == AppSettingsControl.DEFAULT_ART_SWITCH,
+                                    onRealHover = { focusIndex = controls.indexOf(AppSettingsControl.DEFAULT_ART_SWITCH) },
+                                ),
                             )
                         }
                     }
@@ -1277,12 +1556,35 @@ private fun AppSettingsScreen(launcherFolder: File?, onBack: () -> Unit) {
  * window, which windowState.placement already does live via Window's own
  * observation of it.
  */
+// #76 - same flat-list model as AppSettingsControl, simpler here: both
+// controls are always visible, no conditional entries.
+private enum class VideoSettingsControl { PRESERVE_ASPECT_RATIO_SWITCH, FULL_SCREEN_SWITCH }
+
 @Composable
 private fun VideoSettingsScreen(launcherFolder: File?, windowState: WindowState, onBack: () -> Unit) {
     var settings by remember {
         mutableStateOf(if (launcherFolder != null) loadAppSettings(launcherFolder) else AppSettings())
     }
     val coroutineScope = rememberCoroutineScope()
+
+    // #76 - same flat-list model as AppSettingsScreen, simpler here: both
+    // controls are always visible, no conditional items and no nested
+    // dialog to guard against.
+    val controls = VideoSettingsControl.entries
+    var focusIndex by remember { mutableStateOf(0) }
+    val focusedControl = controls.getOrNull(focusIndex.coerceIn(0, controls.lastIndex))
+    // #76 follow-up - see AppSettingsScreen's own identical fix/comment:
+    // LaunchedEffect(Unit) below never restarts, so activateFocused()
+    // needs this stable indirection to read the live focus instead of a
+    // frozen first-composition snapshot.
+    val currentFocusedControl by rememberUpdatedState(focusedControl)
+
+    fun moveFocusUp() {
+        focusIndex = (focusIndex - 1).coerceAtLeast(0)
+    }
+    fun moveFocusDown() {
+        focusIndex = (focusIndex + 1).coerceAtMost(controls.lastIndex)
+    }
 
     fun persist(updated: AppSettings) {
         settings = updated
@@ -1311,6 +1613,33 @@ private fun VideoSettingsScreen(launcherFolder: File?, windowState: WindowState,
         }
     }
 
+    fun activateFocused() {
+        when (currentFocusedControl) {
+            VideoSettingsControl.PRESERVE_ASPECT_RATIO_SWITCH ->
+                persist(settings.copy(preserveAspectRatioEnabled = !settings.preserveAspectRatioEnabled))
+            VideoSettingsControl.FULL_SCREEN_SWITCH -> {
+                val enabled = !settings.fullscreenEnabled
+                persist(settings.copy(fullscreenEnabled = enabled))
+                setFullscreen(enabled)
+            }
+            null -> Unit
+        }
+    }
+
+    // #69's own framing, reused: a second real input source feeding the
+    // exact same actions the keyboard onKeyEvent below already handles.
+    LaunchedEffect(Unit) {
+        GamepadInputBus.events.collect { action ->
+            when (action) {
+                GamepadAction.UP -> moveFocusUp()
+                GamepadAction.OPTIONS -> moveFocusDown()
+                GamepadAction.LAUNCH -> activateFocused()
+                GamepadAction.BACK -> onBack()
+                GamepadAction.LEFT, GamepadAction.RIGHT -> Unit
+            }
+        }
+    }
+
     val focusRequester = remember { FocusRequester() }
     var hasRequestedInitialFocus by remember { mutableStateOf(false) }
 
@@ -1331,11 +1660,13 @@ private fun VideoSettingsScreen(launcherFolder: File?, windowState: WindowState,
             }
             .focusable()
             .onKeyEvent { event ->
-                if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
-                    onBack()
-                    true
-                } else {
-                    false
+                if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+                when (event.key) {
+                    Key.Escape -> { onBack(); true }
+                    Key.Enter, Key.NumPadEnter, Key.CtrlLeft -> { activateFocused(); true }
+                    Key.DirectionUp -> { moveFocusUp(); true }
+                    Key.DirectionDown -> { moveFocusDown(); true }
+                    else -> false
                 }
             },
     ) {
@@ -1378,6 +1709,10 @@ private fun VideoSettingsScreen(launcherFolder: File?, windowState: WindowState,
                         Switch(
                             checked = settings.preserveAspectRatioEnabled,
                             onCheckedChange = { persist(settings.copy(preserveAspectRatioEnabled = it)) },
+                            interactionSource = rememberFocusInteractionSource(
+                                isFocused = focusedControl == VideoSettingsControl.PRESERVE_ASPECT_RATIO_SWITCH,
+                                onRealHover = { focusIndex = controls.indexOf(VideoSettingsControl.PRESERVE_ASPECT_RATIO_SWITCH) },
+                            ),
                         )
                     }
                 }
@@ -1411,6 +1746,10 @@ private fun VideoSettingsScreen(launcherFolder: File?, windowState: WindowState,
                                 persist(settings.copy(fullscreenEnabled = enabled))
                                 setFullscreen(enabled)
                             },
+                            interactionSource = rememberFocusInteractionSource(
+                                isFocused = focusedControl == VideoSettingsControl.FULL_SCREEN_SWITCH,
+                                onRealHover = { focusIndex = controls.indexOf(VideoSettingsControl.FULL_SCREEN_SWITCH) },
+                            ),
                         )
                     }
                 }
@@ -2072,32 +2411,38 @@ private fun SettingsScreen(
         Spacer(modifier = Modifier.height(24.dp))
 
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            SettingsCard("App Settings", "Global media override", Modifier.weight(1f), focus == SettingsFocus.APP_SETTINGS, onOpenAppSettings)
-            SettingsCard("Controls", "Assign gamepad buttons per action", Modifier.weight(1f), focus == SettingsFocus.CONTROLS, onOpenControls)
+            SettingsCard("App Settings", "Global media override", Modifier.weight(1f), focus == SettingsFocus.APP_SETTINGS, { focus = SettingsFocus.APP_SETTINGS }, onOpenAppSettings)
+            SettingsCard("Controls", "Assign gamepad buttons per action", Modifier.weight(1f), focus == SettingsFocus.CONTROLS, { focus = SettingsFocus.CONTROLS }, onOpenControls)
         }
         Spacer(modifier = Modifier.height(12.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            SettingsCard("About", "Build info, credits, open source", Modifier.weight(1f), focus == SettingsFocus.ABOUT, onOpenAbout)
-            SettingsCard("Video Settings", "Aspect ratio, full screen mode", Modifier.weight(1f), focus == SettingsFocus.VIDEO_SETTINGS, onOpenVideoSettings)
+            SettingsCard("About", "Build info, credits, open source", Modifier.weight(1f), focus == SettingsFocus.ABOUT, { focus = SettingsFocus.ABOUT }, onOpenAbout)
+            SettingsCard("Video Settings", "Aspect ratio, full screen mode", Modifier.weight(1f), focus == SettingsFocus.VIDEO_SETTINGS, { focus = SettingsFocus.VIDEO_SETTINGS }, onOpenVideoSettings)
         }
     }
 }
 
 @Composable
-private fun SettingsCard(title: String, subtitle: String, modifier: Modifier, isFocused: Boolean, onClick: () -> Unit) {
-    // #73 - same real visible focus indicator #72 already established
-    // (green border, Android's own D-pad-focus-ring color) - reused
-    // rather than inventing a new treatment per screen.
+private fun SettingsCard(title: String, subtitle: String, modifier: Modifier, isFocused: Boolean, onHover: () -> Unit, onClick: () -> Unit) {
+    // #76 follow-up, corrected against a real screenshot of the real
+    // Android app: the padding-halo trick used elsewhere on this pass
+    // added an extra ring around the card's own existing outline, which
+    // doesn't match - Android just swaps the card's own fill to grey,
+    // same outline weight/size as an unfocused card. Container color,
+    // not an added border/ring.
     OutlinedCard(
-        modifier = modifier
-            .clickable(onClick = onClick)
-            .then(
-                if (isFocused) {
-                    Modifier.border(3.dp, HypdroidGreenAccent, MaterialTheme.shapes.medium)
-                } else {
-                    Modifier
-                },
-            ),
+        // #76 follow-up - real, live feedback: the default mouse-hover
+        // ripple painted square (clip() first so it's bounded by the
+        // same rounded shape the card itself uses), and mouse hover and
+        // keyboard/gamepad focus could each highlight a different card
+        // at once ("out of sync") - onHover now moves the same shared
+        // focus state clicking would land on anyway.
+        modifier = modifier.clip(MaterialTheme.shapes.medium).focusableClickable(onHover = onHover, onClick = onClick),
+        colors = if (isFocused) {
+            CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        } else {
+            CardDefaults.outlinedCardColors()
+        },
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
