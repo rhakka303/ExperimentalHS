@@ -22,14 +22,22 @@ import kotlinx.serialization.json.Json
  * overlayBezel/aspectBezelFix. Confirmed against Android's real source
  * (MainActivity.kt ~line 381) that these are all just launch-argument
  * flags under the hood, the same category as `arguments` above, not a
- * separate system - scorebezelAutofit -> "-scorebezel_autofit",
- * overlayBezel -> "-overlaybezel", aspectBezelFix -> "-aspectbezelfix",
- * unconditionally when true. bezelEnabled is the one exception: it
- * resolves an actual per-game bezel file (see bezelLaunchArgs below)
- * rather than being a bare flag, and is a no-op if that file doesn't
- * exist - confirmed true right now for all three real test games in
- * smoke/ (their bezels/ folder has no matching PNGs), same situation
- * Android's own code already handles gracefully.
+ * separate system - overlayBezel -> "-overlaybezel", unconditionally
+ * when true. bezelEnabled is the one exception: it resolves an actual
+ * per-game bezel file (see bezelLaunchArgs below) rather than being a
+ * bare flag, and is a no-op if that file doesn't exist - confirmed true
+ * right now for all three real test games in smoke/ (their bezels/
+ * folder has no matching PNGs), same situation Android's own code
+ * already handles gracefully.
+ *
+ * #87 correction: scorebezelAutofit -> "-scorebezel_autofit" and
+ * aspectBezelFix -> "-aspectbezelfix" turned out not to be real hypseus
+ * arguments at all (checked doc/CmdLine.md and src/io/cmdline.cpp,
+ * neither string exists in either place, at v3.0.2 or current master) -
+ * see launchArgumentsFor()'s own comment. Both fields stay on this data
+ * class (an already-saved options.json with either set true must still
+ * load without losing the value) but neither is read/emitted as a
+ * launch arg anywhere anymore, and neither has UI to set it currently.
  *
  * #30 - coverArtOverride: this game's own CoverArtType, or null to use
  * the app default (BOX) - see resolveCoverArtFile() in CoverArt.kt (#27).
@@ -125,9 +133,21 @@ fun launchArgumentsFor(
 ): List<String> {
     val args = mutableListOf<String>()
     if (options.bezelEnabled) args += bezelLaunchArgs(installRoot, gameName)
-    if (options.scorebezelAutofit) args += "-scorebezel_autofit"
+    /* #87 - neither -scorebezel_autofit nor -aspectbezelfix (below) exist
+     * in DirtBagXon/hypseus-singe - checked doc/CmdLine.md and
+     * src/io/cmdline.cpp, at the v3.0.2 tag and current master, neither
+     * string appears in either spelling. Per #32's own established
+     * finding, hypseus shows a real Windows error popup and aborts
+     * launch on an unrecognized argument rather than ignoring it, so
+     * emitting either of these could break a real launch outright. Left
+     * here commented, not deleted, on the chance a future hypseus-singe
+     * release adds real support - trivial to bring back if so.
+     * if (options.scorebezelAutofit) args += "-scorebezel_autofit"
+     */
     if (options.overlayBezel) args += "-overlaybezel"
-    if (options.aspectBezelFix) args += "-aspectbezelfix"
+    /* #87 - see the -scorebezel_autofit comment above; same finding.
+     * if (options.aspectBezelFix) args += "-aspectbezelfix"
+     */
     if (preserveAspectRatioEnabled) args += "-preserve_aspect_ratio"
     if (gamepadEnabled) args += "-gamepad"
     if (gameFullscreenEnabled) args += "-fullscreen"
