@@ -46,4 +46,25 @@ class GameOptionsTest {
         assertEquals(listOf("-fastboot"), loaded.arguments)
         assertEquals(true, loaded.bezelEnabled)
     }
+
+    // --- launchArgumentsFor / #32 ---
+
+    @Test
+    fun `preserveAspectRatioEnabled defaults to off and adds no argument`() {
+        val args = launchArgumentsFor(launcherFolder, GameOptions(), "dragons_lair")
+
+        assertEquals(emptyList(), args)
+    }
+
+    @Test
+    fun `preserveAspectRatioEnabled appends -preserve_aspect_ratio after aspectBezelFix and before custom arguments`() {
+        val options = GameOptions(
+            aspectBezelFix = true,
+            arguments = listOf("-fastboot"),
+        )
+
+        val args = launchArgumentsFor(launcherFolder, options, "dragons_lair", preserveAspectRatioEnabled = true)
+
+        assertEquals(listOf("-aspectbezelfix", "-preserve_aspect_ratio", "-fastboot"), args)
+    }
 }

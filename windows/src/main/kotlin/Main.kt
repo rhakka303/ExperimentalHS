@@ -219,8 +219,12 @@ private fun GameCarousel(
         snapshotFlow { pagerState.currentPage }.collect { onPageChanged(it) }
     }
 
+    // #32 - preserveAspectRatioEnabled is app-level (#31), not per-game;
+    // launchArgumentsFor slots it into the right position in the argv.
     fun extraArgsFor(game: Game): List<String> =
-        launcherFolder?.let { launchArgumentsFor(installRoot, loadOptions(it, game.name), game.name) } ?: emptyList()
+        launcherFolder?.let {
+            launchArgumentsFor(installRoot, loadOptions(it, game.name), game.name, appSettings.preserveAspectRatioEnabled)
+        } ?: emptyList()
 
     fun pageLeft() {
         val target = pagerState.currentPage - 1
@@ -908,6 +912,21 @@ private fun AppSettingsScreen(launcherFolder: File?, onBack: () -> Unit) {
                             Text(
                                 "On: adds black bars if the video doesn't match your screen. Off: fills the screen.",
                                 style = MaterialTheme.typography.bodyMedium,
+                            )
+                            // #32 - real version risk, not hedging: this
+                            // flag was added to hypseus-singe in 3.0.2. The
+                            // launcher never bundles or version-checks its
+                            // host install (epic non-goal), so an older
+                            // hypseus.exe drop-in doesn't silently ignore
+                            // an unrecognized arg - io/error.cpp's
+                            // printerror() pops a real Windows MessageBox
+                            // and interrupts launch. Documented visibly
+                            // here rather than assumed away, per #32's own
+                            // acceptance criteria.
+                            Text(
+                                "Requires hypseus-singe 3.0.2 or newer. Older installs will show an error on launch if this is on.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
                             )
                         }
                         Switch(
