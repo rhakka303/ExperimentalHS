@@ -79,8 +79,10 @@ import androidx.compose.ui.window.rememberWindowState
 import java.io.File
 import java.io.IOException
 import kotlin.math.absoluteValue
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private sealed interface Screen {
     data object Carousel : Screen
@@ -122,10 +124,11 @@ private sealed interface Screen {
  */
 fun main() = application {
     val launcherFolder = remember { resolveLauncherFolder() }
-    // #68 - real prototype only, confirming LWJGL/GLFW's own background
-    // thread coexists cleanly with everything below. remember(Unit) so
-    // this only ever starts once, not on every recomposition.
-    remember(Unit) { startGamepadPrototype(launcherFolder) }
+    // #68/#69 - real gamepad input, confirmed live working (#68). Starts
+    // once (remember(Unit), not per-recomposition) and runs for the
+    // app's whole lifetime - individual screens react to it (or don't)
+    // via GamepadInputBus, per their own LaunchedEffect.
+    remember(Unit) { startGamepadInput() }
     val initialFullscreenEnabled = remember(launcherFolder) {
         launcherFolder?.let { loadAppSettings(it).fullscreenEnabled } ?: false
     }
@@ -327,9 +330,59 @@ private fun GameCarousel(
         val target = pagerState.currentPage + 1
         if (target < games.size) coroutineScope.launch { pagerState.animateScrollToPage(target) }
     }
+    // #69 - real, live-found bug: GLFW's gamepad polling reads the raw
+    // physical device state directly, with no concept of window focus at
+    // all (unlike keyboard/mouse, which the OS naturally scopes to
+    // whichever window is focused) - it kept firing into the carousel
+    // even while hypseus had focus and a game was actually being played,
+    // moving the carousel and launching a second game mid-play. isGameRunning
+    // gates the carousel's own gamepad handling explicitly while a
+    // launched game's process is still alive - tracked the same real way
+    // the reverted #45 attempt did (Process.waitFor() on Dispatchers.IO),
+    // but only ever touching this plain boolean, never windowState, which
+    // is what made that attempt risky. Keyboard/mouse never needed this:
+    // hypseus's own window naturally has focus during play, so the
+    // carousel's onKeyEvent/onClick simply never fire during that time.
+    var isGameRunning by remember { mutableStateOf(false) }
+
+    fun launchAndTrack(game: Game) {
+        val result = launchGame(game, installRoot, extraArgsFor(game))
+        if (result is LaunchResult.Started) {
+            isGameRunning = true
+            coroutineScope.launch {
+                try {
+                    withContext(Dispatchers.IO) { result.process.waitFor() }
+                } catch (e: InterruptedException) {
+                    // fall through - isGameRunning still needs clearing
+                }
+                isGameRunning = false
+            }
+        }
+    }
+
     fun launchCentered() {
-        val game = games[pagerState.currentPage]
-        launchGame(game, installRoot, extraArgsFor(game))
+        launchAndTrack(games[pagerState.currentPage])
+    }
+
+    // #69 - a second real input source feeding the exact same actions
+    // the carousel's own keyboard onKeyEvent already handles below - not
+    // a new interaction model. Only collects while GameCarousel is
+    // actually composed (this LaunchedEffect's own lifecycle), which is
+    // what scopes gamepad navigation to "only while the carousel is
+    // showing" for free. BACK is deliberately not handled here - nothing
+    // to back out of from the home screen, matching Escape's own
+    // established behavior on this same screen.
+    LaunchedEffect(Unit) {
+        GamepadInputBus.events.collect { action ->
+            if (isGameRunning) return@collect
+            when (action) {
+                GamepadAction.LEFT -> pageLeft()
+                GamepadAction.RIGHT -> pageRight()
+                GamepadAction.LAUNCH -> launchCentered()
+                GamepadAction.OPTIONS -> onOpenOptions(games[pagerState.currentPage])
+                GamepadAction.BACK -> Unit
+            }
+        }
     }
 
     // #29 - full-screen background, the bottom-most layer. Crop, not Fit -
@@ -511,7 +564,7 @@ private fun GameCarousel(
                             game = game,
                             coverArtFile = coverArtFileFor(game),
                             scale = scale,
-                            onClick = { launchGame(game, installRoot, extraArgsFor(game)) },
+                            onClick = { launchAndTrack(game) },
                             onOpenOptions = { onOpenOptions(game) },
                         )
                     }
@@ -679,6 +732,17 @@ private fun GameOptionsScreen(game: Game, launcherFolder: File?, onOpenGameHack:
     fun persist(updated: GameOptions) {
         options = updated
         if (launcherFolder != null) saveOptions(launcherFolder, game.name, updated)
+    }
+
+    // #69 - B backs out of this screen, completing the loop the
+    // carousel's own gamepad OPTIONS action opens - without this,
+    // entering GameOptionsScreen via a controller would strand the user
+    // needing a mouse/keyboard just to leave it again. Only LEFT/RIGHT/
+    // LAUNCH/OPTIONS have no meaning here, so they're left unhandled.
+    LaunchedEffect(Unit) {
+        GamepadInputBus.events.collect { action ->
+            if (action == GamepadAction.BACK) onBack()
+        }
     }
 
     // Escape matches hypseus's own KEY_QUIT default (SDLK_ESCAPE) - no
