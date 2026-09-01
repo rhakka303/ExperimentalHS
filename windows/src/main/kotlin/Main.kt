@@ -1257,6 +1257,18 @@ private fun VideoSettingsScreen(launcherFolder: File?, windowState: WindowState,
                                 "On: full screen. Off: windowed mode.",
                                 style = MaterialTheme.typography.bodyMedium,
                             )
+                            // #65 - real, known, currently-unresolved
+                            // issue (#45): the launcher can stay hidden on
+                            // the taskbar after exiting a game in Full
+                            // Screen mode. Two fix attempts were reverted
+                            // (one caused a worse regression - see #45's
+                            // own comments), so this is flagged visibly
+                            // rather than presented as fully solid.
+                            Text(
+                                "Experimental: May hide on taskbar after exiting game",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
                         }
                         Switch(
                             checked = settings.fullscreenEnabled,
