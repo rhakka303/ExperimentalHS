@@ -18,14 +18,21 @@ sealed interface LaunchResult {
  * discarded here - that is the caller's to observe via
  * Process.waitFor()/onExit(). Not swallowing it is the entire point of
  * returning the real Process object rather than, say, a plain Boolean.
+ *
+ * #18 - extraArguments are #18's per-game custom arguments, appended
+ * after #9's own argv. Each entry is split on whitespace before being
+ * appended, matching Android's MainActivity.kt (~line 396) exactly: a
+ * saved entry can itself be a multi-token string (e.g. "-scalefactor
+ * 50"), not necessarily one argv token per entry.
  */
-fun launchGame(game: Game, installRoot: File): LaunchResult {
+fun launchGame(game: Game, installRoot: File, extraArguments: List<String> = emptyList()): LaunchResult {
     val hypseusExe = File(installRoot, "hypseus.exe")
     if (!hypseusExe.isFile) {
         return LaunchResult.HypseusNotFound(hypseusExe)
     }
 
-    val args = buildLaunchArgs(game, installRoot)
+    val args = buildLaunchArgs(game, installRoot) +
+        extraArguments.flatMap { it.trim().split(Regex("\\s+")).filter { token -> token.isNotEmpty() } }
     val process = ProcessBuilder(listOf(hypseusExe.path) + args)
         .directory(installRoot)
         .start()
