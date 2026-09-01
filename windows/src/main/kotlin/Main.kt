@@ -805,6 +805,12 @@ private fun GameCard(game: Game, coverArtFile: File?, scale: Float, onClick: () 
  * immediately on change, no separate Save button - matching Android's own
  * documented behavior exactly, not a Windows invention.
  */
+// #83 - the real, ordered flat-list stops this screen can have.
+// OVERLAY_BEZEL_SWITCH only ever appears in the real list while
+// BEZEL_SWITCH is on, matching the screen's own real conditional layout
+// - same reasoning as AppSettingsControl's own identical comment.
+private enum class GameOptionsControl { COVER_ART_CHANGE, GAME_HACKS, BEZEL_SWITCH, SCOREBEZEL_AUTOFIT_SWITCH, OVERLAY_BEZEL_SWITCH }
+
 @Composable
 private fun GameOptionsScreen(game: Game, launcherFolder: File?, onOpenGameHack: () -> Unit, onBack: () -> Unit) {
     var options by remember(game) {
@@ -818,14 +824,64 @@ private fun GameOptionsScreen(game: Game, launcherFolder: File?, onOpenGameHack:
         if (launcherFolder != null) saveOptions(launcherFolder, game.name, updated)
     }
 
+    // #83 - same flat-list model #76 established: one ordered list of
+    // this screen's real controls, left column top-to-bottom then right
+    // column (matching #76's own AppSettingsScreen ordering), Overlay
+    // Bezel only in the list while Bezel is actually on. The Arguments
+    // card (text field, Add, remove buttons) is deliberately not part of
+    // this list at all - confirmed with the owner while scoping #83: a
+    // controller can't type into that field regardless of whether it's
+    // reachable, so making the rest of the card focusable would be
+    // reachable-but-useless.
+    val controls = remember(options.bezelEnabled) {
+        buildList {
+            add(GameOptionsControl.COVER_ART_CHANGE)
+            add(GameOptionsControl.GAME_HACKS)
+            add(GameOptionsControl.BEZEL_SWITCH)
+            add(GameOptionsControl.SCOREBEZEL_AUTOFIT_SWITCH)
+            if (options.bezelEnabled) add(GameOptionsControl.OVERLAY_BEZEL_SWITCH)
+        }
+    }
+    var focusIndex by remember(game) { mutableStateOf(0) }
+    val focusedControl = controls.getOrNull(focusIndex.coerceIn(0, controls.lastIndex))
+    // #76's own fix for the same LaunchedEffect(Unit)-never-restarts
+    // staleness - see its own comment on AppSettingsScreen for why this
+    // indirection is needed.
+    val currentFocusedControl by rememberUpdatedState(focusedControl)
+
+    fun moveFocusUp() {
+        focusIndex = (focusIndex - 1).coerceAtLeast(0)
+    }
+    fun moveFocusDown() {
+        focusIndex = (focusIndex + 1).coerceAtMost(controls.lastIndex)
+    }
+    fun activateFocused() {
+        when (currentFocusedControl) {
+            GameOptionsControl.COVER_ART_CHANGE -> showCoverArtPicker = true
+            GameOptionsControl.GAME_HACKS -> onOpenGameHack()
+            GameOptionsControl.BEZEL_SWITCH -> persist(options.copy(bezelEnabled = !options.bezelEnabled))
+            GameOptionsControl.SCOREBEZEL_AUTOFIT_SWITCH -> persist(options.copy(scorebezelAutofit = !options.scorebezelAutofit))
+            GameOptionsControl.OVERLAY_BEZEL_SWITCH -> persist(options.copy(overlayBezel = !options.overlayBezel))
+            null -> Unit
+        }
+    }
+
     // #69 - B backs out of this screen, completing the loop the
-    // carousel's own gamepad OPTIONS action opens - without this,
-    // entering GameOptionsScreen via a controller would strand the user
-    // needing a mouse/keyboard just to leave it again. Only LEFT/RIGHT/
-    // LAUNCH/OPTIONS have no meaning here, so they're left unhandled.
+    // carousel's own gamepad OPTIONS action opens. #83 extends this to
+    // the rest of this screen's own real navigation. Same
+    // showCoverArtPicker guard AppSettingsScreen's own gamepad effect
+    // uses (#76) - the dialog is additive, not a replacement, so this
+    // screen's own collector keeps running underneath it.
     LaunchedEffect(Unit) {
         GamepadInputBus.events.collect { action ->
-            if (action == GamepadAction.BACK) onBack()
+            if (showCoverArtPicker) return@collect
+            when (action) {
+                GamepadAction.UP -> moveFocusUp()
+                GamepadAction.OPTIONS -> moveFocusDown()
+                GamepadAction.LAUNCH -> activateFocused()
+                GamepadAction.BACK -> onBack()
+                GamepadAction.LEFT, GamepadAction.RIGHT -> Unit
+            }
         }
     }
 
@@ -853,11 +909,25 @@ private fun GameOptionsScreen(game: Game, launcherFolder: File?, onOpenGameHack:
             }
             .focusable()
             .onKeyEvent { event ->
-                if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
-                    onBack()
-                    true
-                } else {
-                    false
+                if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+                when (event.key) {
+                    Key.Escape -> {
+                        onBack()
+                        true
+                    }
+                    Key.Enter, Key.NumPadEnter, Key.CtrlLeft -> {
+                        activateFocused()
+                        true
+                    }
+                    Key.DirectionUp -> {
+                        moveFocusUp()
+                        true
+                    }
+                    Key.DirectionDown -> {
+                        moveFocusDown()
+                        true
+                    }
+                    else -> false
                 }
             },
     ) {
@@ -881,7 +951,13 @@ private fun GameOptionsScreen(game: Game, launcherFolder: File?, onOpenGameHack:
                     Column(modifier = Modifier.padding(12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("Cover Art", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                            Button(onClick = { showCoverArtPicker = true }) { Text("Change") }
+                            Button(
+                                onClick = { showCoverArtPicker = true },
+                                interactionSource = rememberFocusInteractionSource(
+                                    isFocused = focusedControl == GameOptionsControl.COVER_ART_CHANGE,
+                                    onRealHover = { focusIndex = controls.indexOf(GameOptionsControl.COVER_ART_CHANGE) },
+                                ),
+                            ) { Text("Change") }
                         }
                         Spacer(modifier = Modifier.height(4.dp))
                         Text((options.coverArtOverride ?: CoverArtType.BOX).name, style = MaterialTheme.typography.bodyMedium)
@@ -890,12 +966,18 @@ private fun GameOptionsScreen(game: Game, launcherFolder: File?, onOpenGameHack:
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                OutlinedCard(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenGameHack)) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Text("Game Hacks", style = MaterialTheme.typography.titleMedium)
-                        Text("Custom game fixes", style = MaterialTheme.typography.bodySmall)
-                    }
-                }
+                // #83 - reuses SettingsCard verbatim rather than hand-
+                // rolling a second copy of the same title+subtitle+focus
+                // card shape - this card's own content already matched
+                // it exactly (titleMedium/bodySmall, 12dp padding).
+                SettingsCard(
+                    "Game Hacks",
+                    "Custom game fixes",
+                    Modifier.fillMaxWidth(),
+                    focusedControl == GameOptionsControl.GAME_HACKS,
+                    { focusIndex = controls.indexOf(GameOptionsControl.GAME_HACKS) },
+                    onOpenGameHack,
+                )
             }
 
             OutlinedCard(modifier = Modifier.weight(1f)) {
@@ -908,6 +990,10 @@ private fun GameOptionsScreen(game: Game, launcherFolder: File?, onOpenGameHack:
                         Switch(
                             checked = options.bezelEnabled,
                             onCheckedChange = { persist(options.copy(bezelEnabled = it)) },
+                            interactionSource = rememberFocusInteractionSource(
+                                isFocused = focusedControl == GameOptionsControl.BEZEL_SWITCH,
+                                onRealHover = { focusIndex = controls.indexOf(GameOptionsControl.BEZEL_SWITCH) },
+                            ),
                         )
                     }
 
@@ -923,6 +1009,10 @@ private fun GameOptionsScreen(game: Game, launcherFolder: File?, onOpenGameHack:
                         Switch(
                             checked = options.scorebezelAutofit,
                             onCheckedChange = { persist(options.copy(scorebezelAutofit = it)) },
+                            interactionSource = rememberFocusInteractionSource(
+                                isFocused = focusedControl == GameOptionsControl.SCOREBEZEL_AUTOFIT_SWITCH,
+                                onRealHover = { focusIndex = controls.indexOf(GameOptionsControl.SCOREBEZEL_AUTOFIT_SWITCH) },
+                            ),
                         )
                     }
 
@@ -940,6 +1030,10 @@ private fun GameOptionsScreen(game: Game, launcherFolder: File?, onOpenGameHack:
                             Switch(
                                 checked = options.overlayBezel,
                                 onCheckedChange = { persist(options.copy(overlayBezel = it)) },
+                                interactionSource = rememberFocusInteractionSource(
+                                    isFocused = focusedControl == GameOptionsControl.OVERLAY_BEZEL_SWITCH,
+                                    onRealHover = { focusIndex = controls.indexOf(GameOptionsControl.OVERLAY_BEZEL_SWITCH) },
+                                ),
                             )
                         }
                     }
@@ -1145,10 +1239,53 @@ private fun CoverArtPickerDialog(onSelect: (CoverArtType) -> Unit, onDismiss: ()
  * mirroring Android's own current state (confirmed live on real hardware,
  * not assumed).
  */
+// #83 - a flat list of exactly one real control, same model as every
+// other screen this story touches - the second card is a genuine blank
+// placeholder (Android's own current state too), not a focus stop, so
+// there's nothing else for this list to hold yet.
+private enum class GameHackControl { ASPECT_RATIO_BEZEL_FIX_SWITCH }
+
 @Composable
 private fun GameHackScreen(game: Game, launcherFolder: File?, onBack: () -> Unit) {
     var options by remember(game) {
         mutableStateOf(if (launcherFolder != null) loadOptions(launcherFolder, game.name) else GameOptions())
+    }
+
+    fun persist(updated: GameOptions) {
+        options = updated
+        if (launcherFolder != null) saveOptions(launcherFolder, game.name, updated)
+    }
+
+    val controls = GameHackControl.entries
+    var focusIndex by remember(game) { mutableStateOf(0) }
+    val focusedControl = controls.getOrNull(focusIndex.coerceIn(0, controls.lastIndex))
+    val currentFocusedControl by rememberUpdatedState(focusedControl)
+
+    fun moveFocusUp() {
+        focusIndex = (focusIndex - 1).coerceAtLeast(0)
+    }
+    fun moveFocusDown() {
+        focusIndex = (focusIndex + 1).coerceAtMost(controls.lastIndex)
+    }
+    fun activateFocused() {
+        when (currentFocusedControl) {
+            GameHackControl.ASPECT_RATIO_BEZEL_FIX_SWITCH -> persist(options.copy(aspectBezelFix = !options.aspectBezelFix))
+            null -> Unit
+        }
+    }
+
+    // #83 - this screen had no gamepad wiring at all before, not even
+    // BACK - same #69 framing every other screen already uses.
+    LaunchedEffect(Unit) {
+        GamepadInputBus.events.collect { action ->
+            when (action) {
+                GamepadAction.UP -> moveFocusUp()
+                GamepadAction.OPTIONS -> moveFocusDown()
+                GamepadAction.LAUNCH -> activateFocused()
+                GamepadAction.BACK -> onBack()
+                GamepadAction.LEFT, GamepadAction.RIGHT -> Unit
+            }
+        }
     }
 
     // Escape matches hypseus's own KEY_QUIT default - same as #19's
@@ -1173,11 +1310,25 @@ private fun GameHackScreen(game: Game, launcherFolder: File?, onBack: () -> Unit
             }
             .focusable()
             .onKeyEvent { event ->
-                if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
-                    onBack()
-                    true
-                } else {
-                    false
+                if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+                when (event.key) {
+                    Key.Escape -> {
+                        onBack()
+                        true
+                    }
+                    Key.Enter, Key.NumPadEnter, Key.CtrlLeft -> {
+                        activateFocused()
+                        true
+                    }
+                    Key.DirectionUp -> {
+                        moveFocusUp()
+                        true
+                    }
+                    Key.DirectionDown -> {
+                        moveFocusDown()
+                        true
+                    }
+                    else -> false
                 }
             },
     ) {
@@ -1204,17 +1355,19 @@ private fun GameHackScreen(game: Game, launcherFolder: File?, onBack: () -> Unit
                         }
                         Switch(
                             checked = options.aspectBezelFix,
-                            onCheckedChange = {
-                                val updated = options.copy(aspectBezelFix = it)
-                                options = updated
-                                if (launcherFolder != null) saveOptions(launcherFolder, game.name, updated)
-                            },
+                            onCheckedChange = { persist(options.copy(aspectBezelFix = it)) },
+                            interactionSource = rememberFocusInteractionSource(
+                                isFocused = focusedControl == GameHackControl.ASPECT_RATIO_BEZEL_FIX_SWITCH,
+                                onRealHover = { focusIndex = controls.indexOf(GameHackControl.ASPECT_RATIO_BEZEL_FIX_SWITCH) },
+                            ),
                         )
                     }
                 }
             }
 
-            // Blank/TBD, matching Android's own current state exactly.
+            // Blank/TBD, matching Android's own current state exactly -
+            // not a focus stop, see this screen's own GameHackControl
+            // comment.
             OutlinedCard(modifier = Modifier.weight(1f)) {
                 Column(modifier = Modifier.padding(12.dp).fillMaxWidth()) {}
             }
