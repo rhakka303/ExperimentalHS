@@ -66,6 +66,18 @@ import kotlinx.coroutines.launch
 
 private sealed interface Screen {
     data object Carousel : Screen
+    data object Settings : Screen
+    // #24 - each of these is a genuinely blank page for
+    // now, matching #19's Cover Art stub precedent: present so the
+    // Settings screen matches the shape it will eventually need, not
+    // functional yet. Manage Game Folder and Touch Controls (both real
+    // cards on Android's own Settings screen) are deliberately excluded -
+    // no folder picker exists or is planned here at all (#6), and there
+    // is no touchscreen on desktop.
+    data object ManageMediaFolder : Screen
+    data object AppSettings : Screen
+    data object Controls : Screen
+    data object About : Screen
     data class GameOptionsFor(val game: Game) : Screen
     data class GameHackFor(val game: Game) : Screen
 }
@@ -125,7 +137,19 @@ private fun HypdroidApp(games: List<Game>, installRoot: File, launcherFolder: Fi
             initialPage = carouselPage,
             onPageChanged = { carouselPage = it },
             onOpenOptions = { screen = Screen.GameOptionsFor(it) },
+            onOpenSettings = { screen = Screen.Settings },
         )
+        is Screen.Settings -> SettingsScreen(
+            onOpenManageMediaFolder = { screen = Screen.ManageMediaFolder },
+            onOpenAppSettings = { screen = Screen.AppSettings },
+            onOpenControls = { screen = Screen.Controls },
+            onOpenAbout = { screen = Screen.About },
+            onBack = { screen = Screen.Carousel },
+        )
+        is Screen.ManageMediaFolder -> BlankPlaceholderScreen("Manage Media Folder", onBack = { screen = Screen.Settings })
+        is Screen.AppSettings -> BlankPlaceholderScreen("App Settings", onBack = { screen = Screen.Settings })
+        is Screen.Controls -> BlankPlaceholderScreen("Controls", onBack = { screen = Screen.Settings })
+        is Screen.About -> BlankPlaceholderScreen("About", onBack = { screen = Screen.Settings })
         is Screen.GameOptionsFor -> GameOptionsScreen(
             game = s.game,
             launcherFolder = launcherFolder,
@@ -148,6 +172,7 @@ private fun GameCarousel(
     initialPage: Int,
     onPageChanged: (Int) -> Unit,
     onOpenOptions: (Game) -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { games.size })
     val coroutineScope = rememberCoroutineScope()
@@ -264,6 +289,15 @@ private fun GameCarousel(
             modifier = Modifier.align(Alignment.CenterEnd).padding(8.dp),
         ) {
             Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Next game")
+        }
+
+        // #24 - Settings entry point, matching Android's top-bar gear
+        // placement.
+        IconButton(
+            onClick = onOpenSettings,
+            modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
+        ) {
+            Icon(Icons.Filled.Settings, contentDescription = "Settings")
         }
     }
 }
@@ -574,6 +608,128 @@ private fun GameHackScreen(game: Game, launcherFolder: File?, onBack: () -> Unit
             OutlinedCard(modifier = Modifier.weight(1f)) {
                 Column(modifier = Modifier.padding(12.dp).fillMaxWidth()) {}
             }
+        }
+    }
+}
+
+/**
+ * #24 - four cards matching the subset of Android's real
+ * Settings screen that applies here (Manage Game Folder and Touch
+ * Controls excluded - see Screen's own comment for why). Each card is a
+ * genuinely blank destination for now, same "present but not yet
+ * functional" precedent #19 set for Cover Art. No .bat export card here -
+ * that's #20's original scope, deferred separately (owner, 2026-08-31:
+ * low priority, phase 5+); this pass is purely about the screen's shape.
+ */
+@Composable
+private fun SettingsScreen(
+    onOpenManageMediaFolder: () -> Unit,
+    onOpenAppSettings: () -> Unit,
+    onOpenControls: () -> Unit,
+    onOpenAbout: () -> Unit,
+    onBack: () -> Unit,
+) {
+    val focusRequester = remember { FocusRequester() }
+    var hasRequestedInitialFocus by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+            .focusRequester(focusRequester)
+            .onGloballyPositioned {
+                if (!hasRequestedInitialFocus) {
+                    hasRequestedInitialFocus = true
+                    try {
+                        focusRequester.requestFocus()
+                    } catch (e: IllegalStateException) {
+                        // see #17's identical guard on GameCarousel
+                    }
+                }
+            }
+            .focusable()
+            .onKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
+                    onBack()
+                    true
+                } else {
+                    false
+                }
+            },
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Settings", style = MaterialTheme.typography.titleLarge)
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            SettingsCard("Manage Media Folder", "Pick where your artwork lives", Modifier.weight(1f), onOpenManageMediaFolder)
+            SettingsCard("App Settings", "Global Cover Art override", Modifier.weight(1f), onOpenAppSettings)
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            SettingsCard("Controls", "Assign gamepad buttons per action", Modifier.weight(1f), onOpenControls)
+            SettingsCard("About", "Build info, credits, open source", Modifier.weight(1f), onOpenAbout)
+        }
+    }
+}
+
+@Composable
+private fun SettingsCard(title: String, subtitle: String, modifier: Modifier, onClick: () -> Unit) {
+    OutlinedCard(modifier = modifier.clickable(onClick = onClick)) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+/**
+ * #24 - a genuinely empty destination, shared by all
+ * four Settings cards above. Just a header and Back/Escape, matching the
+ * same navigation shell every other screen already uses.
+ */
+@Composable
+private fun BlankPlaceholderScreen(title: String, onBack: () -> Unit) {
+    val focusRequester = remember(title) { FocusRequester() }
+    var hasRequestedInitialFocus by remember(title) { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+            .focusRequester(focusRequester)
+            .onGloballyPositioned {
+                if (!hasRequestedInitialFocus) {
+                    hasRequestedInitialFocus = true
+                    try {
+                        focusRequester.requestFocus()
+                    } catch (e: IllegalStateException) {
+                        // see #17's identical guard on GameCarousel
+                    }
+                }
+            }
+            .focusable()
+            .onKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
+                    onBack()
+                    true
+                } else {
+                    false
+                }
+            },
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(title, style = MaterialTheme.typography.titleLarge)
         }
     }
 }
