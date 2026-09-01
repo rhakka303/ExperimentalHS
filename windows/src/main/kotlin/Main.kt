@@ -1410,10 +1410,37 @@ private fun ControlsScreen(
                     )
                 }
             }
-            else -> Text(
-                "Coming soon.",
-                style = MaterialTheme.typography.bodyMedium,
-            )
+            // #49 - Controller 2: identical shape to Controller 1 (#48),
+            // same ControllerBindingsCard, only the columns read/written
+            // differ (Pad1Button/AxisPad1). Real, not speculative: the
+            // actual smoke/ install's KEY_COIN2/KEY_START2 are genuinely
+            // bound through Pad1 (a real two-controller cabinet setup),
+            // confirmed against the real hypinput_gamepad.ini during
+            // #48/#49's scoping.
+            mode == "Controller 2" -> {
+                val half = (rows.size + 1) / 2
+                Row(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    ControllerBindingsCard(
+                        rows = rows.take(half),
+                        buttonValue = { it.pad1Button },
+                        axisValue = { it.axisPad1 },
+                        onPickButton = { keyName -> tokenPickerRequest = TokenPickerRequest(keyName, BindingSlot.PAD1_BUTTON, "Button", VALID_BUTTON_TOKENS) },
+                        onPickAxis = { keyName -> tokenPickerRequest = TokenPickerRequest(keyName, BindingSlot.AXIS_PAD1, "Axis", VALID_AXIS_TOKENS) },
+                        modifier = Modifier.weight(1f),
+                    )
+                    ControllerBindingsCard(
+                        rows = rows.drop(half),
+                        buttonValue = { it.pad1Button },
+                        axisValue = { it.axisPad1 },
+                        onPickButton = { keyName -> tokenPickerRequest = TokenPickerRequest(keyName, BindingSlot.PAD1_BUTTON, "Button", VALID_BUTTON_TOKENS) },
+                        onPickAxis = { keyName -> tokenPickerRequest = TokenPickerRequest(keyName, BindingSlot.AXIS_PAD1, "Axis", VALID_AXIS_TOKENS) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
         }
     }
 
