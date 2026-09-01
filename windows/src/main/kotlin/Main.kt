@@ -111,6 +111,9 @@ private sealed interface Screen {
     data object VideoSettings : Screen
     data object Controls : Screen
     data object About : Screen
+    // #20 - real content on day one, not a blank stub: exporting a
+    // standalone .bat per scanned game (BatExport.kt).
+    data object Export : Screen
     data class GameOptionsFor(val game: Game) : Screen
     data class GameHackFor(val game: Game) : Screen
 }
@@ -226,6 +229,7 @@ private fun HypdroidApp(
             onOpenControls = { screen = Screen.Controls },
             onOpenAbout = { screen = Screen.About },
             onOpenVideoSettings = { screen = Screen.VideoSettings },
+            onOpenExport = { screen = Screen.Export },
             onBack = { screen = Screen.Carousel },
         )
         is Screen.AppSettings -> AppSettingsScreen(launcherFolder = launcherFolder, onBack = { screen = Screen.Settings })
@@ -242,6 +246,12 @@ private fun HypdroidApp(
             onBack = { screen = Screen.Settings },
         )
         is Screen.About -> BlankPlaceholderScreen("About", onBack = { screen = Screen.Settings })
+        is Screen.Export -> ExportScreen(
+            games = games,
+            installRoot = installRoot,
+            launcherFolder = launcherFolder,
+            onBack = { screen = Screen.Settings },
+        )
         is Screen.GameOptionsFor -> GameOptionsScreen(
             game = s.game,
             launcherFolder = launcherFolder,
@@ -333,6 +343,7 @@ private fun GameCarousel(
                 game.name,
                 appSettings.preserveAspectRatioEnabled,
                 appSettings.gamepadEnabled,
+                appSettings.gameFullscreenEnabled,
             )
         } ?: emptyList()
 
@@ -1559,7 +1570,13 @@ private fun AppSettingsScreen(launcherFolder: File?, onBack: () -> Unit) {
  */
 // #76 - same flat-list model as AppSettingsControl, simpler here: both
 // controls are always visible, no conditional entries.
-private enum class VideoSettingsControl { PRESERVE_ASPECT_RATIO_SWITCH, FULL_SCREEN_SWITCH }
+// #20 follow-up - GAME_FULL_SCREEN_SWITCH is a real, live-found gap:
+// -fullscreen (the hypseus arg that puts the game itself full screen)
+// used to be hardcoded unconditionally rather than a real setting - see
+// AppSettings.gameFullscreenEnabled's own doc comment. FULL_SCREEN_SWITCH
+// (App Full Screen) is a genuinely different thing - this launcher's own
+// window, not the game.
+private enum class VideoSettingsControl { PRESERVE_ASPECT_RATIO_SWITCH, FULL_SCREEN_SWITCH, GAME_FULL_SCREEN_SWITCH }
 
 @Composable
 private fun VideoSettingsScreen(launcherFolder: File?, windowState: WindowState, onBack: () -> Unit) {
@@ -1623,6 +1640,8 @@ private fun VideoSettingsScreen(launcherFolder: File?, windowState: WindowState,
                 persist(settings.copy(fullscreenEnabled = enabled))
                 setFullscreen(enabled)
             }
+            VideoSettingsControl.GAME_FULL_SCREEN_SWITCH ->
+                persist(settings.copy(gameFullscreenEnabled = !settings.gameFullscreenEnabled))
             null -> Unit
         }
     }
@@ -1723,7 +1742,11 @@ private fun VideoSettingsScreen(launcherFolder: File?, windowState: WindowState,
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Full Screen", style = MaterialTheme.typography.titleMedium)
+                            // #20 follow-up - renamed from "Full Screen":
+                            // this toggles the launcher's own window, not
+                            // the game - see GAME_FULL_SCREEN_SWITCH's own
+                            // card below for that.
+                            Text("App Full Screen", style = MaterialTheme.typography.titleMedium)
                             Text(
                                 "On: full screen. Off: windowed mode.",
                                 style = MaterialTheme.typography.bodyMedium,
@@ -1755,6 +1778,126 @@ private fun VideoSettingsScreen(launcherFolder: File?, windowState: WindowState,
                     }
                 }
             }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            // #20 follow-up - real, live-found gap: -fullscreen (the game
+            // itself, not this launcher's own window - see App Full
+            // Screen above) was hardcoded unconditionally in LaunchArgs.kt
+            // instead of being a real setting. Same live launcher +
+            // exported .bat reach as every other flag here (see
+            // AppSettings.gameFullscreenEnabled's own doc comment).
+            OutlinedCard(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Game Full Screen", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                "On: launch game full screen. Off: launch game windowed.",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                        Switch(
+                            checked = settings.gameFullscreenEnabled,
+                            onCheckedChange = { persist(settings.copy(gameFullscreenEnabled = it)) },
+                            interactionSource = rememberFocusInteractionSource(
+                                isFocused = focusedControl == VideoSettingsControl.GAME_FULL_SCREEN_SWITCH,
+                                onRealHover = { focusIndex = controls.indexOf(VideoSettingsControl.GAME_FULL_SCREEN_SWITCH) },
+                            ),
+                        )
+                    }
+                }
+            }
+            // Blank/TBD, matching GameHackScreen's own identical
+            // blank-second-card precedent - every card row in this app
+            // pairs two, per the owner's own correction here.
+            OutlinedCard(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.padding(12.dp).fillMaxWidth()) {}
+            }
+        }
+    }
+}
+
+/**
+ * #20 - real content on day one, not a blank stub: one action, exporting
+ * a standalone `.bat` per scanned game into `batch/` (BatExport.kt does
+ * the actual work - relative paths, no baseline flags, see its own doc
+ * comment for why this can't reuse the live launcher's buildLaunchArgs()
+ * as-is).
+ */
+@Composable
+private fun ExportScreen(games: List<Game>, installRoot: File, launcherFolder: File?, onBack: () -> Unit) {
+    var resultMessage by remember { mutableStateOf<String?>(null) }
+
+    val focusRequester = remember { FocusRequester() }
+    var hasRequestedInitialFocus by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+            .focusRequester(focusRequester)
+            .onGloballyPositioned {
+                if (!hasRequestedInitialFocus) {
+                    hasRequestedInitialFocus = true
+                    try {
+                        focusRequester.requestFocus()
+                    } catch (e: IllegalStateException) {
+                        // see #17's identical guard on GameCarousel
+                    }
+                }
+            }
+            .focusable()
+            .onKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
+                    onBack()
+                    true
+                } else {
+                    false
+                }
+            },
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Export", style = MaterialTheme.typography.titleLarge)
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedCard(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Create Bat Files", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Writes one .bat per game into the install's batch/ folder. Re-running overwrites cleanly.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    Button(onClick = {
+                        val count = exportBatFiles(installRoot, games, launcherFolder)
+                        resultMessage = "Exported $count file${if (count == 1) "" else "s"} to batch/"
+                    }) { Text("Generate") }
+                }
+            }
+            // Blank/TBD, matching GameHackScreen's own identical
+            // blank-second-card precedent.
+            OutlinedCard(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.padding(12.dp).fillMaxWidth()) {}
+            }
+        }
+
+        resultMessage?.let { message ->
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(message, style = MaterialTheme.typography.bodyMedium)
         }
     }
 }
@@ -2398,17 +2541,26 @@ private fun TokenPickerDialog(title: String, options: List<String>, onSelect: (S
 // off a grid edge stays put rather than wrapping, matching how #72's
 // CarouselFocus movement already behaves (Up from CARDS does nothing
 // further once GEAR is reached, not cycle back around).
-private enum class SettingsFocus { APP_SETTINGS, CONTROLS, ABOUT, VIDEO_SETTINGS }
+// #20 - EXPORT is a 3rd row's left cell; its own right cell is a plain
+// unfocusable placeholder card (matching GameHackScreen's identical
+// blank-second-card precedent), so it has no SettingsFocus value of its
+// own - moveDown/moveRight below simply have no transition off the
+// right column's bottom edge or off EXPORT's own right edge, same "edges
+// stay put, no wraparound" rule #73 already established for the first
+// two rows.
+private enum class SettingsFocus { APP_SETTINGS, CONTROLS, ABOUT, VIDEO_SETTINGS, EXPORT }
 
 private fun SettingsFocus.moveUp(): SettingsFocus = when (this) {
     SettingsFocus.ABOUT -> SettingsFocus.APP_SETTINGS
     SettingsFocus.VIDEO_SETTINGS -> SettingsFocus.CONTROLS
+    SettingsFocus.EXPORT -> SettingsFocus.ABOUT
     else -> this
 }
 
 private fun SettingsFocus.moveDown(): SettingsFocus = when (this) {
     SettingsFocus.APP_SETTINGS -> SettingsFocus.ABOUT
     SettingsFocus.CONTROLS -> SettingsFocus.VIDEO_SETTINGS
+    SettingsFocus.ABOUT -> SettingsFocus.EXPORT
     else -> this
 }
 
@@ -2430,6 +2582,7 @@ private fun SettingsScreen(
     onOpenControls: () -> Unit,
     onOpenAbout: () -> Unit,
     onOpenVideoSettings: () -> Unit,
+    onOpenExport: () -> Unit,
     onBack: () -> Unit,
 ) {
     val focusRequester = remember { FocusRequester() }
@@ -2449,6 +2602,7 @@ private fun SettingsScreen(
             SettingsFocus.CONTROLS -> onOpenControls()
             SettingsFocus.ABOUT -> onOpenAbout()
             SettingsFocus.VIDEO_SETTINGS -> onOpenVideoSettings()
+            SettingsFocus.EXPORT -> onOpenExport()
         }
     }
 
@@ -2535,6 +2689,16 @@ private fun SettingsScreen(
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             SettingsCard("About", "Build info, credits, open source", Modifier.weight(1f), focus == SettingsFocus.ABOUT, { focus = SettingsFocus.ABOUT }, onOpenAbout)
             SettingsCard("Video Settings", "Aspect ratio, full screen mode", Modifier.weight(1f), focus == SettingsFocus.VIDEO_SETTINGS, { focus = SettingsFocus.VIDEO_SETTINGS }, onOpenVideoSettings)
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            SettingsCard("Export", "Create standalone .bat files", Modifier.weight(1f), focus == SettingsFocus.EXPORT, { focus = SettingsFocus.EXPORT }, onOpenExport)
+            // Blank/TBD, matching GameHackScreen's own identical
+            // blank-second-card precedent - not a SettingsCard, no focus
+            // stop, purely a visual placeholder.
+            OutlinedCard(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.padding(12.dp).fillMaxWidth()) {}
+            }
         }
     }
 }

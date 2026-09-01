@@ -52,9 +52,12 @@ fun buildLaunchArgs(game: Game, installRoot: File): List<String> {
 
     val homeDir = installRoot.path
     args += listOf("-homedir", "$homeDir/", "-datadir", "$homeDir/")
-    // Same baked-in defaults as Android, per the owner: real fullscreen
-    // gameplay, SDL_Gamepad enabled. Not configurable in phase 1.
-    args += listOf("-fullscreen", "-gamepad")
+    // Same baked-in default as Android, per the owner: SDL_Gamepad
+    // enabled. Not configurable in phase 1. -fullscreen used to be
+    // hardcoded here too - now a real setting (AppSettings.
+    // gameFullscreenEnabled), applied via launchArgumentsFor() alongside
+    // every other configurable flag instead of unconditionally here.
+    args += "-gamepad"
 
     return args
 }

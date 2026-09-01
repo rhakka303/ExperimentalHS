@@ -107,6 +107,13 @@ fun saveOptions(launcherFolder: File, gameName: String, options: GameOptions) {
  * Confirmed real: -gamepad is documented in doc/CmdLine.md ("Enable
  * SDL_Gamepad configuration") and implemented in cmdline.cpp - a plain
  * flag, same as the others here, not a value/ini setting.
+ *
+ * gameFullscreenEnabled - real, live-found gap: -fullscreen used to be
+ * hardcoded unconditionally in LaunchArgs.kt's buildLaunchArgs() instead
+ * of living here alongside every other configurable flag. Defaults to
+ * true (not false, unlike the others) to match that previous always-on
+ * behavior for anyone already using this app - only newly-created
+ * AppSettings start from AppSettings' own gameFullscreenEnabled default.
  */
 fun launchArgumentsFor(
     installRoot: File,
@@ -114,6 +121,7 @@ fun launchArgumentsFor(
     gameName: String,
     preserveAspectRatioEnabled: Boolean = false,
     gamepadEnabled: Boolean = false,
+    gameFullscreenEnabled: Boolean = true,
 ): List<String> {
     val args = mutableListOf<String>()
     if (options.bezelEnabled) args += bezelLaunchArgs(installRoot, gameName)
@@ -122,6 +130,7 @@ fun launchArgumentsFor(
     if (options.aspectBezelFix) args += "-aspectbezelfix"
     if (preserveAspectRatioEnabled) args += "-preserve_aspect_ratio"
     if (gamepadEnabled) args += "-gamepad"
+    if (gameFullscreenEnabled) args += "-fullscreen"
     args += options.arguments
     return args
 }
