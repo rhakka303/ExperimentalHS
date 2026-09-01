@@ -513,21 +513,46 @@ private fun GameCarousel(
                     }
                 }
 
-                // #17 - visible mouse-clickable paging, the direct mouse
-                // equivalent of the arrow keys. Local to this box, not
-                // Android's own top bar - a Windows-only addition, kept
-                // where it's always been.
-                IconButton(
-                    onClick = ::pageLeft,
-                    modifier = Modifier.align(Alignment.CenterStart).padding(8.dp),
+                // #17/#59 - visible mouse-clickable paging, the direct
+                // mouse equivalent of the arrow keys. Local to this box,
+                // not the top bar (#57) - a Windows-only addition, kept
+                // where it's always been. Enlarged, white-on-scrim -
+                // same real precedent as each card's own gear icon (#19):
+                // a semi-transparent dark scrim circle keeps them legible
+                // against any background, real art or plain.
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .padding(8.dp)
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.5f))
+                        .clickable(onClick = ::pageLeft),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Previous game")
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Previous game",
+                        tint = Color.White,
+                        modifier = Modifier.size(32.dp),
+                    )
                 }
-                IconButton(
-                    onClick = ::pageRight,
-                    modifier = Modifier.align(Alignment.CenterEnd).padding(8.dp),
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(8.dp)
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.5f))
+                        .clickable(onClick = ::pageRight),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Next game")
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = "Next game",
+                        tint = Color.White,
+                        modifier = Modifier.size(32.dp),
+                    )
                 }
             }
         }
