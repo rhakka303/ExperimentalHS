@@ -1935,6 +1935,39 @@ private fun TokenPickerDialog(title: String, options: List<String>, onSelect: (S
  * #43 - the empty bottom-right cell gets a fourth real card, "Video
  * Settings", rather than staying empty forever.
  */
+// #73 - the real 2x2 grid Settings actually lays out as (#41's own
+// layout decision): App Settings top-left, Controls top-right, About
+// bottom-left, Video Settings bottom-right. Movement functions below are
+// the grid's real topology, not a generic "next/previous" cycle - moving
+// off a grid edge stays put rather than wrapping, matching how #72's
+// CarouselFocus movement already behaves (Up from CARDS does nothing
+// further once GEAR is reached, not cycle back around).
+private enum class SettingsFocus { APP_SETTINGS, CONTROLS, ABOUT, VIDEO_SETTINGS }
+
+private fun SettingsFocus.moveUp(): SettingsFocus = when (this) {
+    SettingsFocus.ABOUT -> SettingsFocus.APP_SETTINGS
+    SettingsFocus.VIDEO_SETTINGS -> SettingsFocus.CONTROLS
+    else -> this
+}
+
+private fun SettingsFocus.moveDown(): SettingsFocus = when (this) {
+    SettingsFocus.APP_SETTINGS -> SettingsFocus.ABOUT
+    SettingsFocus.CONTROLS -> SettingsFocus.VIDEO_SETTINGS
+    else -> this
+}
+
+private fun SettingsFocus.moveLeft(): SettingsFocus = when (this) {
+    SettingsFocus.CONTROLS -> SettingsFocus.APP_SETTINGS
+    SettingsFocus.VIDEO_SETTINGS -> SettingsFocus.ABOUT
+    else -> this
+}
+
+private fun SettingsFocus.moveRight(): SettingsFocus = when (this) {
+    SettingsFocus.APP_SETTINGS -> SettingsFocus.CONTROLS
+    SettingsFocus.ABOUT -> SettingsFocus.VIDEO_SETTINGS
+    else -> this
+}
+
 @Composable
 private fun SettingsScreen(
     onOpenAppSettings: () -> Unit,
@@ -1945,6 +1978,41 @@ private fun SettingsScreen(
 ) {
     val focusRequester = remember { FocusRequester() }
     var hasRequestedInitialFocus by remember { mutableStateOf(false) }
+
+    // #73 - real keyboard/gamepad navigation of this screen, following
+    // directly from #72 (Up from the carousel reaches Settings, but
+    // previously stranded the user there with no way to move around or
+    // back out except a mouse or Escape). Starts on App Settings
+    // (top-left) - the natural landing spot coming from #72's own entry
+    // point.
+    var focus by remember { mutableStateOf(SettingsFocus.APP_SETTINGS) }
+
+    fun openFocused() {
+        when (focus) {
+            SettingsFocus.APP_SETTINGS -> onOpenAppSettings()
+            SettingsFocus.CONTROLS -> onOpenControls()
+            SettingsFocus.ABOUT -> onOpenAbout()
+            SettingsFocus.VIDEO_SETTINGS -> onOpenVideoSettings()
+        }
+    }
+
+    // #69's own framing, reused: a second real input source feeding the
+    // exact same actions the keyboard onKeyEvent below already handles,
+    // not a new interaction model. Only collects while this screen is
+    // actually composed, which is what scopes it to "only while Settings
+    // is showing" for free.
+    LaunchedEffect(Unit) {
+        GamepadInputBus.events.collect { action ->
+            when (action) {
+                GamepadAction.UP -> focus = focus.moveUp()
+                GamepadAction.LEFT -> focus = focus.moveLeft()
+                GamepadAction.RIGHT -> focus = focus.moveRight()
+                GamepadAction.LAUNCH -> openFocused()
+                GamepadAction.OPTIONS -> focus = focus.moveDown()
+                GamepadAction.BACK -> onBack()
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -1963,11 +2031,33 @@ private fun SettingsScreen(
             }
             .focusable()
             .onKeyEvent { event ->
-                if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
-                    onBack()
-                    true
-                } else {
-                    false
+                if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+                when (event.key) {
+                    Key.Escape -> {
+                        onBack()
+                        true
+                    }
+                    Key.Enter, Key.NumPadEnter, Key.CtrlLeft -> {
+                        openFocused()
+                        true
+                    }
+                    Key.DirectionUp -> {
+                        focus = focus.moveUp()
+                        true
+                    }
+                    Key.DirectionDown -> {
+                        focus = focus.moveDown()
+                        true
+                    }
+                    Key.DirectionLeft -> {
+                        focus = focus.moveLeft()
+                        true
+                    }
+                    Key.DirectionRight -> {
+                        focus = focus.moveRight()
+                        true
+                    }
+                    else -> false
                 }
             },
     ) {
@@ -1982,20 +2072,33 @@ private fun SettingsScreen(
         Spacer(modifier = Modifier.height(24.dp))
 
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            SettingsCard("App Settings", "Global media override", Modifier.weight(1f), onOpenAppSettings)
-            SettingsCard("Controls", "Assign gamepad buttons per action", Modifier.weight(1f), onOpenControls)
+            SettingsCard("App Settings", "Global media override", Modifier.weight(1f), focus == SettingsFocus.APP_SETTINGS, onOpenAppSettings)
+            SettingsCard("Controls", "Assign gamepad buttons per action", Modifier.weight(1f), focus == SettingsFocus.CONTROLS, onOpenControls)
         }
         Spacer(modifier = Modifier.height(12.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            SettingsCard("About", "Build info, credits, open source", Modifier.weight(1f), onOpenAbout)
-            SettingsCard("Video Settings", "Aspect ratio, full screen mode", Modifier.weight(1f), onOpenVideoSettings)
+            SettingsCard("About", "Build info, credits, open source", Modifier.weight(1f), focus == SettingsFocus.ABOUT, onOpenAbout)
+            SettingsCard("Video Settings", "Aspect ratio, full screen mode", Modifier.weight(1f), focus == SettingsFocus.VIDEO_SETTINGS, onOpenVideoSettings)
         }
     }
 }
 
 @Composable
-private fun SettingsCard(title: String, subtitle: String, modifier: Modifier, onClick: () -> Unit) {
-    OutlinedCard(modifier = modifier.clickable(onClick = onClick)) {
+private fun SettingsCard(title: String, subtitle: String, modifier: Modifier, isFocused: Boolean, onClick: () -> Unit) {
+    // #73 - same real visible focus indicator #72 already established
+    // (green border, Android's own D-pad-focus-ring color) - reused
+    // rather than inventing a new treatment per screen.
+    OutlinedCard(
+        modifier = modifier
+            .clickable(onClick = onClick)
+            .then(
+                if (isFocused) {
+                    Modifier.border(3.dp, HypdroidGreenAccent, MaterialTheme.shapes.medium)
+                } else {
+                    Modifier
+                },
+            ),
+    ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
             Text(subtitle, style = MaterialTheme.typography.bodySmall)
