@@ -72,14 +72,13 @@ import kotlinx.coroutines.launch
 private sealed interface Screen {
     data object Carousel : Screen
     data object Settings : Screen
-    // #24 - each of these is a genuinely blank page for
-    // now, matching #19's Cover Art stub precedent: present so the
-    // Settings screen matches the shape it will eventually need, not
-    // functional yet. Manage Game Folder and Touch Controls (both real
-    // cards on Android's own Settings screen) are deliberately excluded -
-    // no folder picker exists or is planned here at all (#6), and there
-    // is no touchscreen on desktop.
-    data object ManageMediaFolder : Screen
+    // #24 - Controls/About are genuinely blank pages for now, matching
+    // #19's Cover Art stub precedent: present so the Settings screen
+    // matches the shape it will eventually need, not functional yet.
+    // Manage Game Folder and Touch Controls (both real cards on Android's
+    // own Settings screen) are deliberately excluded - no touchscreen on
+    // desktop, and #41 ruled out a media folder picker permanently
+    // (fixed, auto-created location, not user-configurable).
     data object AppSettings : Screen
     data object Controls : Screen
     data object About : Screen
@@ -145,13 +144,11 @@ private fun HypdroidApp(games: List<Game>, installRoot: File, launcherFolder: Fi
             onOpenSettings = { screen = Screen.Settings },
         )
         is Screen.Settings -> SettingsScreen(
-            onOpenManageMediaFolder = { screen = Screen.ManageMediaFolder },
             onOpenAppSettings = { screen = Screen.AppSettings },
             onOpenControls = { screen = Screen.Controls },
             onOpenAbout = { screen = Screen.About },
             onBack = { screen = Screen.Carousel },
         )
-        is Screen.ManageMediaFolder -> BlankPlaceholderScreen("Manage Media Folder", onBack = { screen = Screen.Settings })
         is Screen.AppSettings -> AppSettingsScreen(launcherFolder = launcherFolder, onBack = { screen = Screen.Settings })
         is Screen.Controls -> BlankPlaceholderScreen("Controls", onBack = { screen = Screen.Settings })
         is Screen.About -> BlankPlaceholderScreen("About", onBack = { screen = Screen.Settings })
@@ -192,7 +189,14 @@ private fun GameCarousel(
     // back (see #19's comment on carouselPage above), which is what keeps
     // this fresh after a trip to the options or settings screens without
     // needing its own reload trigger.
-    val mediaFolder = remember(installRoot) { resolveMediaFolder(installRoot) }
+    //
+    // #41 - mediaFolder now resolves inside launcherFolder, not
+    // installRoot, and is nullable for the same reason appSettings/
+    // gameOptionsMap already are: launcherFolder is only meaningful for
+    // the packaged app (resolveLauncherFolder()'s own doc comment) - when
+    // null, there's no folder to put media/ inside, so art resolution
+    // simply comes back empty rather than resolving against nothing.
+    val mediaFolder = remember(launcherFolder) { launcherFolder?.let { resolveMediaFolder(it) } }
     val appSettings = remember(launcherFolder) {
         launcherFolder?.let { loadAppSettings(it) } ?: AppSettings()
     }
@@ -203,7 +207,7 @@ private fun GameCarousel(
     // #28 - see GameCardArt.kt's effectiveCoverArtFile for the real
     // Global-vs-per-game precedence rule this wraps.
     fun coverArtFileFor(game: Game): File? =
-        effectiveCoverArtFile(mediaFolder, game.name, appSettings, gameOptionsMap[game.name])
+        mediaFolder?.let { effectiveCoverArtFile(it, game.name, appSettings, gameOptionsMap[game.name]) }
 
     // #29 - resolved from whichever game is currently centered, re-resolving
     // automatically on every recomposition since pagerState.currentPage is
@@ -211,8 +215,10 @@ private fun GameCarousel(
     // already established. Default Art is an unconditional override, not a
     // missing-file fallback (see #27's backgroundArtFile doc comment).
     val focusedGame = games.getOrNull(pagerState.currentPage)
-    val backgroundFile = focusedGame?.let {
-        backgroundArtFile(mediaFolder, it.name, appSettings.backgroundArtEnabled, appSettings.defaultArtEnabled)
+    val backgroundFile = if (mediaFolder != null && focusedGame != null) {
+        backgroundArtFile(mediaFolder, focusedGame.name, appSettings.backgroundArtEnabled, appSettings.defaultArtEnabled)
+    } else {
+        null
     }
 
     LaunchedEffect(pagerState) {
@@ -956,17 +962,23 @@ private fun AppSettingsScreen(launcherFolder: File?, onBack: () -> Unit) {
 }
 
 /**
- * #24 - four cards matching the subset of Android's real
- * Settings screen that applies here (Manage Game Folder and Touch
- * Controls excluded - see Screen's own comment for why). Each card is a
- * genuinely blank destination for now, same "present but not yet
- * functional" precedent #19 set for Cover Art. No .bat export card here -
- * that's #20's original scope, deferred separately (owner, 2026-08-31:
- * low priority, phase 5+); this pass is purely about the screen's shape.
+ * #24 - three cards matching the subset of Android's real Settings screen
+ * that applies here (Manage Game Folder and Touch Controls excluded - see
+ * Screen's own comment for why). Controls/About are genuinely blank
+ * destinations for now, same "present but not yet functional" precedent
+ * #19 set for Cover Art. No .bat export card here - that's #20's original
+ * scope, deferred separately (owner, 2026-08-31: low priority, phase
+ * 5+); this pass is purely about the screen's shape.
+ *
+ * #41 - originally a 2x2 grid with a fourth "Manage Media Folder" card;
+ * removed once the media folder location became fixed and auto-created
+ * (owner's decision: no folder picker, ever - nothing left for that card
+ * to manage). Owner's layout: App Settings top-left, Controls top-right,
+ * About underneath App Settings - bottom-right cell left empty rather
+ * than stretched.
  */
 @Composable
 private fun SettingsScreen(
-    onOpenManageMediaFolder: () -> Unit,
     onOpenAppSettings: () -> Unit,
     onOpenControls: () -> Unit,
     onOpenAbout: () -> Unit,
@@ -1011,13 +1023,15 @@ private fun SettingsScreen(
         Spacer(modifier = Modifier.height(24.dp))
 
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            SettingsCard("Manage Media Folder", "Pick where your artwork lives", Modifier.weight(1f), onOpenManageMediaFolder)
             SettingsCard("App Settings", "Global Cover Art override", Modifier.weight(1f), onOpenAppSettings)
+            SettingsCard("Controls", "Assign gamepad buttons per action", Modifier.weight(1f), onOpenControls)
         }
         Spacer(modifier = Modifier.height(12.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            SettingsCard("Controls", "Assign gamepad buttons per action", Modifier.weight(1f), onOpenControls)
             SettingsCard("About", "Build info, credits, open source", Modifier.weight(1f), onOpenAbout)
+            // No card to pair About with - bottom-right cell stays empty
+            // rather than stretched, matching the owner's layout exactly.
+            Spacer(modifier = Modifier.weight(1f))
         }
     }
 }

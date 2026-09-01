@@ -1,29 +1,36 @@
 import java.io.File
 
 /**
- * #26 - resolves the default `media/` folder cover art and background art
- * live under: `<installRoot>/media/`.
+ * #41 - resolves `media/` inside `HypdroidDesktop/` itself: fully
+ * self-contained alongside `options.json`/`app_settings.json`, owned by
+ * the launcher like everything else it writes (#6's ownership rule).
+ * Originally #26 defaulted this to `<installRoot>/media/`, a sibling of
+ * `HypdroidDesktop/` and the one deliberate exception to that rule -
+ * revised here after phase 3 shipped and real device testing was done.
  *
- * Android has no equivalent default - its storage-permission model (SAF)
- * forces a first-run folder picker with no natural default location at
- * all (see `PREF_MEDIA_FOLDER_URI` in `MainActivity.kt`). Windows has
- * direct filesystem access, so there's nothing forcing that same
- * first-run step here; the epic's own scope decision is to default
- * instead of ask, matching how #8's install root itself is resolved
- * rather than picked.
+ * Fixed location, not user-configurable: no folder picker exists or is
+ * planned (owner's explicit confirmation, 2026-09-01) - unlike Android,
+ * which has no natural default at all under its SAF storage-permission
+ * model and genuinely needs one.
  *
- * Confirmed against two real Android devices (Powkiddy X55, Retroid
- * Pocket 5) via adb: both have a populated `media/{box,cd,logo,bg}/`
- * folder sitting directly alongside the games, matching this default
- * relationship.
+ * Auto-creates `box/`, `cd/`, `logo/` and `bg/` underneath (empty) if
+ * they don't already exist, so a real install always has the
+ * discoverable structure in place with zero manual setup - the same
+ * "auto-creates on every launch regardless of whether it's ever used"
+ * pattern hypseus's own `homedir::set_homedir()` already establishes for
+ * `bezels/` (confirmed real in `video.cpp` during phase 3's bezel work).
+ * Existing art in an already-populated subfolder is left untouched -
+ * `mkdirs()` is a no-op when the folder already exists.
  *
- * Deliberately returns the path unconditionally, with no existence
- * check - same resolution-vs-use split #8's `scanGames`/`resolveInstallRoot`
- * already establishes. Whether the folder (or any file inside it) exists
- * is #27's concern, not this function's.
- *
- * No override/configuration mechanism yet: the epic's non-goals require
- * media/ to be configurable eventually, but no real gap has appeared to
- * justify building a picker before one does.
+ * Real, deliberate consequence: deleting `HypdroidDesktop/` now deletes
+ * any cover art placed inside it too. Anyone with art at the old
+ * `<installRoot>/media/` location needs to move that folder in by hand -
+ * no automatic migration is attempted.
  */
-fun resolveMediaFolder(installRoot: File): File = File(installRoot, "media")
+fun resolveMediaFolder(launcherFolder: File): File {
+    val mediaFolder = File(launcherFolder, "media")
+    for (subfolder in listOf("box", "cd", "logo", "bg")) {
+        File(mediaFolder, subfolder).mkdirs()
+    }
+    return mediaFolder
+}
