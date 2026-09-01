@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -31,6 +32,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -1184,6 +1186,17 @@ private fun VideoSettingsScreen(launcherFolder: File?, windowState: WindowState,
 // like more complexity than it was worth for 3 fixed rows. #47 closed.
 private val CONTROLLER_TYPE_OPTIONS = listOf("Keyboard", "Controller 1", "Controller 2")
 
+// #48 - which row/slot a token picker dialog is currently open for, plus
+// the token list to show (VALID_BUTTON_TOKENS or VALID_AXIS_TOKENS,
+// GamepadIni.kt) and a title. A plain data holder, not a sealed type -
+// every field is already unambiguous together.
+private data class TokenPickerRequest(
+    val keyName: String,
+    val slot: BindingSlot,
+    val title: String,
+    val options: List<String>,
+)
+
 /**
  * #46 - real content for Keyboard mode: every KEY_* action from the one
  * real hypinput_gamepad.ini at the install root (Windows has exactly one
@@ -1210,6 +1223,17 @@ private fun ControlsScreen(installRoot: File, launcherFolder: File?, onBack: () 
     var mode by remember { mutableStateOf("Keyboard") }
     var showModePicker by remember { mutableStateOf(false) }
     var listeningForKeyName by remember { mutableStateOf<String?>(null) }
+
+    // #48 - which row/slot's token picker is open, or null. The chevron
+    // path (Controller 1/Controller 2), not live capture - no gamepad
+    // input API exists to capture from yet (phase 4).
+    var tokenPickerRequest by remember { mutableStateOf<TokenPickerRequest?>(null) }
+    fun writeBinding(keyName: String, slot: BindingSlot, token: String) {
+        val current = iniText ?: return
+        val updated = updateGamepadBinding(current, keyName, slot, token)
+        iniFile.writeText(updated)
+        iniText = updated
+    }
 
     // #46 - gamepadEnabled is app-level (AppSettings, #31's storage),
     // same as every other flag-style toggle already on this screen's
@@ -1344,6 +1368,34 @@ private fun ControlsScreen(installRoot: File, launcherFolder: File?, onBack: () 
                     KeyboardBindingsCard(rows = rows.drop(half), listeningForKeyName = listeningForKeyName, onRowClick = { listeningForKeyName = it }, modifier = Modifier.weight(1f))
                 }
             }
+            // #48 - Controller 1: the chevron/list-picker path, not live
+            // capture - no gamepad input API exists to capture from yet
+            // (phase 4). Pad0Button/AxisPad0 are the real columns for the
+            // first controller.
+            mode == "Controller 1" -> {
+                val half = (rows.size + 1) / 2
+                Row(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    ControllerBindingsCard(
+                        rows = rows.take(half),
+                        buttonValue = { it.pad0Button },
+                        axisValue = { it.axisPad0 },
+                        onPickButton = { keyName -> tokenPickerRequest = TokenPickerRequest(keyName, BindingSlot.PAD0_BUTTON, "Button", VALID_BUTTON_TOKENS) },
+                        onPickAxis = { keyName -> tokenPickerRequest = TokenPickerRequest(keyName, BindingSlot.AXIS_PAD0, "Axis", VALID_AXIS_TOKENS) },
+                        modifier = Modifier.weight(1f),
+                    )
+                    ControllerBindingsCard(
+                        rows = rows.drop(half),
+                        buttonValue = { it.pad0Button },
+                        axisValue = { it.axisPad0 },
+                        onPickButton = { keyName -> tokenPickerRequest = TokenPickerRequest(keyName, BindingSlot.PAD0_BUTTON, "Button", VALID_BUTTON_TOKENS) },
+                        onPickAxis = { keyName -> tokenPickerRequest = TokenPickerRequest(keyName, BindingSlot.AXIS_PAD0, "Axis", VALID_AXIS_TOKENS) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
             else -> Text(
                 "Coming soon.",
                 style = MaterialTheme.typography.bodyMedium,
@@ -1382,6 +1434,19 @@ private fun ControlsScreen(installRoot: File, launcherFolder: File?, onBack: () 
                 }
             }
         }
+    }
+
+    val pickerRequest = tokenPickerRequest
+    if (pickerRequest != null) {
+        TokenPickerDialog(
+            title = "${pickerRequest.title}: ${pickerRequest.keyName}",
+            options = pickerRequest.options,
+            onSelect = { token ->
+                writeBinding(pickerRequest.keyName, pickerRequest.slot, token)
+                tokenPickerRequest = null
+            },
+            onDismiss = { tokenPickerRequest = null },
+        )
     }
 }
 
@@ -1428,6 +1493,134 @@ private fun KeyboardBindingsCard(
                 modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
                 adapter = rememberScrollbarAdapter(listState),
             )
+        }
+    }
+}
+
+/**
+ * #48 - one of the two side-by-side cards Controller 1/Controller 2 mode
+ * splits its rows across, same pattern as #46's KeyboardBindingsCard.
+ * Each row shows two pills (Button, Axis) - matching Android's real
+ * ControllerConfigScreen layout exactly (confirmed live, Retroid Pocket
+ * 5) - but neither pill is clickable itself here, only its chevron: no
+ * live capture exists for controllers yet (phase 4), so a clickable pill
+ * body would either do nothing or start a capture that could never
+ * resolve. buttonValue/axisValue are passed in rather than hardcoded so
+ * this same composable serves both Controller 1 (Pad0) and Controller 2
+ * (Pad1) - only which columns get read/written differs between them.
+ */
+@Composable
+private fun ControllerBindingsCard(
+    rows: List<GamepadRow>,
+    buttonValue: (GamepadRow) -> String,
+    axisValue: (GamepadRow) -> String,
+    onPickButton: (String) -> Unit,
+    onPickAxis: (String) -> Unit,
+    modifier: Modifier,
+) {
+    val listState = rememberLazyListState()
+    OutlinedCard(modifier = modifier.fillMaxHeight()) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize().padding(12.dp),
+                contentPadding = PaddingValues(end = 20.dp),
+            ) {
+                items(rows, key = { it.keyName }) { row ->
+                    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp, horizontal = 4.dp)) {
+                        Text(row.keyName, style = MaterialTheme.typography.bodyMedium)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            val buttonToken = buttonValue(row)
+                            PillWithChevron(
+                                label = if (buttonToken == "0") "Button: None" else "Button: $buttonToken",
+                                onChevronClick = { onPickButton(row.keyName) },
+                            )
+                            val axisToken = axisValue(row)
+                            PillWithChevron(
+                                label = if (axisToken == "0") "Axis: None" else "Axis: $axisToken",
+                                onChevronClick = { onPickAxis(row.keyName) },
+                            )
+                        }
+                    }
+                }
+            }
+            VerticalScrollbar(
+                modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
+                adapter = rememberScrollbarAdapter(listState),
+            )
+        }
+    }
+}
+
+/**
+ * #48 - a real pill (matching the dark rounded look Android's own
+ * ControllerConfigScreen uses), display-only except for its chevron -
+ * see ControllerBindingsCard's own comment for why the pill body itself
+ * is deliberately not clickable in this stage.
+ */
+@Composable
+private fun PillWithChevron(label: String, onChevronClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(MaterialTheme.colorScheme.primary)
+            .padding(start = 12.dp, top = 4.dp, bottom = 4.dp, end = 4.dp),
+    ) {
+        Text(
+            label,
+            color = MaterialTheme.colorScheme.onPrimary,
+            style = MaterialTheme.typography.labelMedium,
+        )
+        IconButton(onClick = onChevronClick, modifier = Modifier.size(28.dp)) {
+            Icon(
+                Icons.Filled.KeyboardArrowDown,
+                contentDescription = "Choose",
+                tint = MaterialTheme.colorScheme.onPrimary,
+            )
+        }
+    }
+}
+
+/**
+ * #48 - the chevron path: a static list of valid token names, no live
+ * input capture needed. Same interaction shape as Cover Art's picker
+ * (#30's CoverArtPickerDialog), generalized to an arbitrary string list
+ * since VALID_BUTTON_TOKENS/VALID_AXIS_TOKENS aren't an enum. Wrapped in
+ * a scrollable, height-capped list rather than CoverArtPickerDialog's
+ * plain Column - VALID_BUTTON_TOKENS alone has 17 entries, too many to
+ * assume they always fit on screen.
+ */
+@Composable
+private fun TokenPickerDialog(title: String, options: List<String>, onSelect: (String) -> Unit, onDismiss: () -> Unit) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = RoundedCornerShape(16.dp), tonalElevation = 4.dp) {
+            Column(modifier = Modifier.padding(24.dp).heightIn(max = 480.dp)) {
+                Text(title, style = MaterialTheme.typography.headlineSmall)
+                Spacer(modifier = Modifier.height(16.dp))
+                LazyColumn(modifier = Modifier.weight(1f, fill = false)) {
+                    items(options) { option ->
+                        Text(
+                            option,
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onSelect(option) }
+                                .padding(vertical = 12.dp),
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "Cancel",
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier
+                        .align(Alignment.End)
+                        .clickable(onClick = onDismiss)
+                        .padding(8.dp),
+                )
+            }
         }
     }
 }
