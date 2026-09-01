@@ -169,6 +169,9 @@ private fun HypdroidApp(games: List<Game>, installRoot: File, launcherFolder: Fi
     }
 }
 
+// see GameCard's identical @Suppress comment - #29's background image
+// reads the same runtime media/ files, not compile-time app resources.
+@Suppress("DEPRECATION")
 @Composable
 private fun GameCarousel(
     games: List<Game>,
@@ -202,6 +205,16 @@ private fun GameCarousel(
     fun coverArtFileFor(game: Game): File? =
         effectiveCoverArtFile(mediaFolder, game.name, appSettings, gameOptionsMap[game.name])
 
+    // #29 - resolved from whichever game is currently centered, re-resolving
+    // automatically on every recomposition since pagerState.currentPage is
+    // itself observed state - no extra plumbing needed beyond what #28
+    // already established. Default Art is an unconditional override, not a
+    // missing-file fallback (see #27's backgroundArtFile doc comment).
+    val focusedGame = games.getOrNull(pagerState.currentPage)
+    val backgroundFile = focusedGame?.let {
+        backgroundArtFile(mediaFolder, it.name, appSettings.backgroundArtEnabled, appSettings.defaultArtEnabled)
+    }
+
     LaunchedEffect(pagerState) {
         snapshotFlow { pagerState.currentPage }.collect { onPageChanged(it) }
     }
@@ -224,6 +237,30 @@ private fun GameCarousel(
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val cardWidth = maxWidth * 0.32f
+
+        // #29 - full-screen background behind the cards. Crop, not Fit -
+        // unlike box/CD art (#28), background images are meant to fully
+        // cover the screen with no preserved-margin concern, matching
+        // Android's own real background rendering exactly. Falls back to
+        // the existing plain background (nothing rendered here) when
+        // resolution returns null, for any of the reasons #27 documents.
+        val backgroundBitmap = remember(backgroundFile) {
+            backgroundFile?.let { file ->
+                try {
+                    file.inputStream().buffered().use(::loadImageBitmap)
+                } catch (e: IOException) {
+                    null
+                }
+            }
+        }
+        if (backgroundBitmap != null) {
+            Image(
+                bitmap = backgroundBitmap,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
 
         HorizontalPager(
             state = pagerState,
