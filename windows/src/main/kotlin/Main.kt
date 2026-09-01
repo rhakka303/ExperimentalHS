@@ -1,36 +1,54 @@
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PageSize
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -46,24 +64,22 @@ import java.io.File
 import kotlin.math.absoluteValue
 import kotlinx.coroutines.launch
 
+private sealed interface Screen {
+    data object Carousel : Screen
+    data class GameOptionsFor(val game: Game) : Screen
+    data class GameHackFor(val game: Game) : Screen
+}
+
 /**
- * #17 - carousel UI, replacing #11's plain list. The Android
- * `GameCarousel`/`GameCard` (MainActivity.kt) is the specification for the
- * shape: `HorizontalPager`, one card centered at full scale, neighbors
- * peeking in scaled down, fixed card width, click any card to launch it.
- * Two things do not carry over: the d-pad `onKeyEvent` wiring (Android's
- * OS translates controller presses into Compose KeyEvents for free;
- * Windows has no such thing - that's phase 4, #6) and long-press-to-open-
- * options (not a discoverable desktop mouse pattern - deferred to #19).
- *
- * No cover art yet (#6's phase 3) - a card falls back to plain text, the
- * same fallback Android already uses when a game has no art file.
+ * #17 - carousel UI, replacing #11's plain list. #19 adds the per-game
+ * options screen, the Game Hacks screen, and navigation between all three.
  */
 fun main() = application {
     Window(onCloseRequest = ::exitApplication, title = "HypdroidDesktop") {
         MaterialTheme {
             Surface(modifier = Modifier.fillMaxSize()) {
                 val installRoot = remember { resolveInstallRoot() }
+                val launcherFolder = remember { resolveLauncherFolder() }
 
                 when {
                     installRoot == null -> Text(
@@ -81,7 +97,7 @@ fun main() = application {
                                 modifier = Modifier.padding(16.dp),
                             )
                         } else {
-                            GameCarousel(games = result.games, installRoot = installRoot)
+                            HypdroidApp(games = result.games, installRoot = installRoot, launcherFolder = launcherFolder)
                         }
                     }
                 }
@@ -91,14 +107,59 @@ fun main() = application {
 }
 
 @Composable
-private fun GameCarousel(games: List<Game>, installRoot: File) {
-    val pagerState = rememberPagerState(pageCount = { games.size })
+private fun HypdroidApp(games: List<Game>, installRoot: File, launcherFolder: File?) {
+    // #19 - lifted out of GameCarousel so the pager's position survives a
+    // trip to another screen and back ("Back returns to the carousel, on
+    // the same card that was open"). GameCarousel gets torn down and
+    // recreated when the screen switches away and back, so remembering
+    // the page inside it (as #17 originally did) would reset to page 0
+    // every time - the same bug Android's own #52 fix already addressed.
+    var carouselPage by remember { mutableStateOf(0) }
+    var screen by remember { mutableStateOf<Screen>(Screen.Carousel) }
+
+    when (val s = screen) {
+        is Screen.Carousel -> GameCarousel(
+            games = games,
+            installRoot = installRoot,
+            launcherFolder = launcherFolder,
+            initialPage = carouselPage,
+            onPageChanged = { carouselPage = it },
+            onOpenOptions = { screen = Screen.GameOptionsFor(it) },
+        )
+        is Screen.GameOptionsFor -> GameOptionsScreen(
+            game = s.game,
+            launcherFolder = launcherFolder,
+            onOpenGameHack = { screen = Screen.GameHackFor(s.game) },
+            onBack = { screen = Screen.Carousel },
+        )
+        is Screen.GameHackFor -> GameHackScreen(
+            game = s.game,
+            launcherFolder = launcherFolder,
+            onBack = { screen = Screen.GameOptionsFor(s.game) },
+        )
+    }
+}
+
+@Composable
+private fun GameCarousel(
+    games: List<Game>,
+    installRoot: File,
+    launcherFolder: File?,
+    initialPage: Int,
+    onPageChanged: (Int) -> Unit,
+    onOpenOptions: (Game) -> Unit,
+) {
+    val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { games.size })
     val coroutineScope = rememberCoroutineScope()
-    // Keyboard paging/launch isn't automatic the way LazyColumn's up/down
-    // is - HorizontalPager needs it wired explicitly, same reasoning as
-    // Android's own d-pad wiring (just keyboard here instead of gamepad).
     val focusRequester = remember { FocusRequester() }
     var hasRequestedInitialFocus by remember { mutableStateOf(false) }
+
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.currentPage }.collect { onPageChanged(it) }
+    }
+
+    fun extraArgsFor(game: Game): List<String> =
+        launcherFolder?.let { launchArgumentsFor(installRoot, loadOptions(it, game.name), game.name) } ?: emptyList()
 
     fun pageLeft() {
         val target = pagerState.currentPage - 1
@@ -107,6 +168,10 @@ private fun GameCarousel(games: List<Game>, installRoot: File) {
     fun pageRight() {
         val target = pagerState.currentPage + 1
         if (target < games.size) coroutineScope.launch { pagerState.animateScrollToPage(target) }
+    }
+    fun launchCentered() {
+        val game = games[pagerState.currentPage]
+        launchGame(game, installRoot, extraArgsFor(game))
     }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -131,10 +196,7 @@ private fun GameCarousel(games: List<Game>, installRoot: File) {
                 // here in practice (confirmed twice on real hardware) - so
                 // this is wrapped rather than trusted further. Worst case
                 // if it still fails: auto-focus-on-launch doesn't happen,
-                // and the pager gets focus on the first click instead
-                // (clicking a card still works regardless - #17's
-                // acceptance criteria doesn't require keyboard paging to
-                // work before any interaction at all).
+                // and the pager gets focus on the first click instead.
                 .onGloballyPositioned {
                     if (!hasRequestedInitialFocus) {
                         hasRequestedInitialFocus = true
@@ -153,10 +215,15 @@ private fun GameCarousel(games: List<Game>, installRoot: File) {
                         // (SDLK_LCTRL, the confirm/action button) in both
                         // hypinput_gamepad.ini in this install and the
                         // plain hypinput.ini reference in the vendored
-                        // source - the ecosystem's standard confirm key,
-                        // not something specific to one config.
+                        // source - the ecosystem's standard confirm key.
                         Key.Enter, Key.NumPadEnter, Key.CtrlLeft -> {
-                            launchGame(games[pagerState.currentPage], installRoot)
+                            launchCentered()
+                            true
+                        }
+                        // #19 - Down opens the centered card's options
+                        // screen, alongside clicking its gear icon.
+                        Key.DirectionDown -> {
+                            onOpenOptions(games[pagerState.currentPage])
                             true
                         }
                         Key.DirectionLeft -> {
@@ -178,15 +245,14 @@ private fun GameCarousel(games: List<Game>, installRoot: File) {
                 GameCard(
                     game = game,
                     scale = scale,
-                    onClick = { launchGame(game, installRoot) },
+                    onClick = { launchGame(game, installRoot, extraArgsFor(game)) },
+                    onOpenOptions = { onOpenOptions(game) },
                 )
             }
         }
 
-        // #17 scope addition, 2026-08-31: visible mouse-clickable paging,
-        // the direct mouse equivalent of the arrow keys - a drag gesture
-        // on the pager itself isn't a substitute, since nothing on screen
-        // hints it exists.
+        // #17 - visible mouse-clickable paging, the direct mouse
+        // equivalent of the arrow keys.
         IconButton(
             onClick = ::pageLeft,
             modifier = Modifier.align(Alignment.CenterStart).padding(8.dp),
@@ -203,7 +269,7 @@ private fun GameCarousel(games: List<Game>, installRoot: File) {
 }
 
 @Composable
-private fun GameCard(game: Game, scale: Float, onClick: () -> Unit) {
+private fun GameCard(game: Game, scale: Float, onClick: () -> Unit, onOpenOptions: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxHeight(0.8f)
@@ -218,5 +284,296 @@ private fun GameCard(game: Game, scale: Float, onClick: () -> Unit) {
         contentAlignment = Alignment.Center,
     ) {
         Text(game.name, textAlign = TextAlign.Center, modifier = Modifier.padding(12.dp))
+
+        // #19 - gear icon, top-right corner, consistent position
+        // regardless of card scale. A semi-transparent dark scrim behind
+        // it (rather than relying on the icon's own color) keeps it
+        // legible against any future cover art color, not just today's
+        // plain placeholder background.
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(6.dp)
+                .size(32.dp)
+                .clip(CircleShape)
+                .background(Color.Black.copy(alpha = 0.5f))
+                .clickable(onClick = onOpenOptions),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Filled.Settings, contentDescription = "Options for ${game.name}", tint = Color.White)
+        }
+    }
+}
+
+/**
+ * #19 - matches Android's real GameOptionsScreen layout and save model:
+ * Cover Art (stub - no media/cover-art system exists on Windows yet, that
+ * is phase 3), Game Hacks (navigates to GameHackScreen below), Bezel/
+ * Scorebezel Autofit/Overlay Bezel, and Arguments. Every field saves
+ * immediately on change, no separate Save button - matching Android's own
+ * documented behavior exactly, not a Windows invention.
+ */
+@Composable
+private fun GameOptionsScreen(game: Game, launcherFolder: File?, onOpenGameHack: () -> Unit, onBack: () -> Unit) {
+    var options by remember(game) {
+        mutableStateOf(if (launcherFolder != null) loadOptions(launcherFolder, game.name) else GameOptions())
+    }
+    var newArgument by remember(game) { mutableStateOf("") }
+
+    fun persist(updated: GameOptions) {
+        options = updated
+        if (launcherFolder != null) saveOptions(launcherFolder, game.name, updated)
+    }
+
+    // Escape matches hypseus's own KEY_QUIT default (SDLK_ESCAPE) - no
+    // dedicated "back" binding exists in hypinput_gamepad.ini, but Escape
+    // is the closest ecosystem convention, same reasoning as Ctrl for
+    // launch in #17.
+    val focusRequester = remember(game) { FocusRequester() }
+    var hasRequestedInitialFocus by remember(game) { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+            .focusRequester(focusRequester)
+            .onGloballyPositioned {
+                if (!hasRequestedInitialFocus) {
+                    hasRequestedInitialFocus = true
+                    try {
+                        focusRequester.requestFocus()
+                    } catch (e: IllegalStateException) {
+                        // see #17's identical guard on GameCarousel
+                    }
+                }
+            }
+            .focusable()
+            .onKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
+                    onBack()
+                    true
+                } else {
+                    false
+                }
+            },
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Options: ${game.name}", style = MaterialTheme.typography.titleLarge)
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Row(modifier = Modifier.fillMaxWidth().padding(top = 24.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(modifier = Modifier.weight(1f)) {
+                // #19 - stub: no cover-art system exists on Windows yet
+                // (phase 3). Shown so the screen matches Android's layout
+                // rather than looking sparse, but "Change" does nothing.
+                OutlinedCard {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text("Cover Art", style = MaterialTheme.typography.titleMedium)
+                        Text("Not available yet (phase 3)", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedCard(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenGameHack)) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text("Game Hacks", style = MaterialTheme.typography.titleMedium)
+                        Text("Custom Game fixes", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+
+            OutlinedCard(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Bezel", style = MaterialTheme.typography.titleMedium)
+                            Text(if (options.bezelEnabled) "On" else "Off", style = MaterialTheme.typography.bodyMedium)
+                        }
+                        Switch(
+                            checked = options.bezelEnabled,
+                            onCheckedChange = { persist(options.copy(bezelEnabled = it)) },
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Scorebezel Autofit", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                if (options.scorebezelAutofit) "On" else "Off",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                        Switch(
+                            checked = options.scorebezelAutofit,
+                            onCheckedChange = { persist(options.copy(scorebezelAutofit = it)) },
+                        )
+                    }
+
+                    if (options.bezelEnabled) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Overlay Bezel", style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    if (options.overlayBezel) "On" else "Off",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                                Text("Makes overlays a priority", style = MaterialTheme.typography.bodySmall)
+                            }
+                            Switch(
+                                checked = options.overlayBezel,
+                                onCheckedChange = { persist(options.copy(overlayBezel = it)) },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(12.dp).fillMaxSize()) {
+                Text("Arguments", style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = newArgument,
+                        onValueChange = { newArgument = it },
+                        modifier = Modifier.weight(1f).onKeyEvent { event ->
+                            if (event.type == KeyEventType.KeyDown && event.key == Key.Enter) {
+                                val trimmed = newArgument.trim()
+                                if (trimmed.isNotEmpty()) {
+                                    persist(options.copy(arguments = options.arguments + trimmed))
+                                    newArgument = ""
+                                }
+                                true
+                            } else {
+                                false
+                            }
+                        },
+                        singleLine = true,
+                        placeholder = { Text("-fastboot") },
+                    )
+                    Button(
+                        onClick = {
+                            val trimmed = newArgument.trim()
+                            if (trimmed.isNotEmpty()) {
+                                persist(options.copy(arguments = options.arguments + trimmed))
+                                newArgument = ""
+                            }
+                        },
+                        modifier = Modifier.padding(start = 8.dp),
+                    ) { Text("Add") }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Column {
+                    options.arguments.forEachIndexed { index, argument ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        ) {
+                            Text(argument, modifier = Modifier.weight(1f))
+                            IconButton(onClick = {
+                                persist(options.copy(arguments = options.arguments.toMutableList().also { it.removeAt(index) }))
+                            }) {
+                                Icon(Icons.Filled.Close, contentDescription = "Remove $argument")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * #19 - matches Android's GameHackScreen shape: one real toggle (Aspect
+ * Ratio Bezel Fix) plus one genuinely empty placeholder card, exactly
+ * mirroring Android's own current state (confirmed live on real hardware,
+ * not assumed).
+ */
+@Composable
+private fun GameHackScreen(game: Game, launcherFolder: File?, onBack: () -> Unit) {
+    var options by remember(game) {
+        mutableStateOf(if (launcherFolder != null) loadOptions(launcherFolder, game.name) else GameOptions())
+    }
+
+    // Escape matches hypseus's own KEY_QUIT default - same as #19's
+    // GameOptionsScreen.
+    val focusRequester = remember(game) { FocusRequester() }
+    var hasRequestedInitialFocus by remember(game) { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+            .focusRequester(focusRequester)
+            .onGloballyPositioned {
+                if (!hasRequestedInitialFocus) {
+                    hasRequestedInitialFocus = true
+                    try {
+                        focusRequester.requestFocus()
+                    } catch (e: IllegalStateException) {
+                        // see #17's identical guard on GameCarousel
+                    }
+                }
+            }
+            .focusable()
+            .onKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
+                    onBack()
+                    true
+                } else {
+                    false
+                }
+            },
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Game Hacks: ${game.name}", style = MaterialTheme.typography.titleLarge)
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Row(modifier = Modifier.fillMaxWidth().padding(top = 24.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedCard(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Aspect Ratio Bezel Fix", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                "Matches this game's bezel to the video - only confirmed on one gun game so far",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        Switch(
+                            checked = options.aspectBezelFix,
+                            onCheckedChange = {
+                                val updated = options.copy(aspectBezelFix = it)
+                                options = updated
+                                if (launcherFolder != null) saveOptions(launcherFolder, game.name, updated)
+                            },
+                        )
+                    }
+                }
+            }
+
+            // Blank/TBD, matching Android's own current state exactly.
+            OutlinedCard(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.padding(12.dp).fillMaxWidth()) {}
+            }
+        }
     }
 }

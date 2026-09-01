@@ -10,17 +10,53 @@ import kotlinx.serialization.json.Json
  * launcher's own folder, per #6's ownership rule - resolved via
  * resolveLauncherFolder(), not the hypseus install root).
  *
- * Phase 2's only field: `arguments`, custom launch arguments per game.
- * Android's GameOptions.kt (`android/app/src/main/java/org/libsdl/app/`)
- * is the specification for the shape and the storage semantics, not
- * something copied from - each entry can itself be a multi-token string
- * (e.g. "-scalefactor 50"), split on whitespace at launch time
- * (MainActivity.kt ~line 396), which is why launchGame() (#10) does the
- * same split rather than appending each entry as a single verbatim
- * argv token.
+ * `arguments`: custom launch arguments per game. Android's GameOptions.kt
+ * (`android/app/src/main/java/org/libsdl/app/`) is the specification for
+ * the shape and the storage semantics, not something copied from - each
+ * entry can itself be a multi-token string (e.g. "-scalefactor 50"),
+ * split on whitespace at launch time (MainActivity.kt ~line 396), which
+ * is why launchGame() (#10) does the same split rather than appending
+ * each entry as a single verbatim argv token.
+ *
+ * #19 scope addition, 2026-08-31: bezelEnabled/scorebezelAutofit/
+ * overlayBezel/aspectBezelFix. Confirmed against Android's real source
+ * (MainActivity.kt ~line 381) that these are all just launch-argument
+ * flags under the hood, the same category as `arguments` above, not a
+ * separate system - scorebezelAutofit -> "-scorebezel_autofit",
+ * overlayBezel -> "-overlaybezel", aspectBezelFix -> "-aspectbezelfix",
+ * unconditionally when true. bezelEnabled is the one exception: it
+ * resolves an actual per-game bezel file (see bezelLaunchArgs below)
+ * rather than being a bare flag, and is a no-op if that file doesn't
+ * exist - confirmed true right now for all three real test games in
+ * smoke/ (their bezels/ folder has no matching PNGs), same situation
+ * Android's own code already handles gracefully.
  */
 @Serializable
-data class GameOptions(val arguments: List<String> = emptyList())
+data class GameOptions(
+    val arguments: List<String> = emptyList(),
+    val bezelEnabled: Boolean = false,
+    val scorebezelAutofit: Boolean = false,
+    val overlayBezel: Boolean = false,
+    val aspectBezelFix: Boolean = false,
+)
+
+/**
+ * #19 - a per-game bezel PNG at <installRoot>/bezels/<gameName>.png, or
+ * no-op if it doesn't exist. Per hypseus's own doc/CmdLine.md: "-bezel
+ * <bezel.png> - Specify a png bezel in 'bezels' sub-folder" - the bezels
+ * subfolder is the implicit default, so -bezel alone is sufficient here.
+ * -bezeldir (confirmed real in io/cmdline.cpp, just undocumented) only
+ * matters for pointing at a non-default folder, which doesn't apply -
+ * the file already sits at the default location. Android's own
+ * bezelLaunchArgs passes -bezeldir unconditionally too, but always at
+ * the same default location -bezel alone already resolves to, so it's
+ * redundant there as well, not something this needed to copy.
+ */
+fun bezelLaunchArgs(installRoot: File, gameName: String): List<String> {
+    val bezelFile = File(File(installRoot, "bezels"), "$gameName.png")
+    if (!bezelFile.isFile) return emptyList()
+    return listOf("-bezel", "$gameName.png")
+}
 
 private val json = Json { ignoreUnknownKeys = true }
 
@@ -47,4 +83,19 @@ fun loadOptions(launcherFolder: File, gameName: String): GameOptions =
 fun saveOptions(launcherFolder: File, gameName: String, options: GameOptions) {
     val all: Map<String, GameOptions> = loadAllOptions(launcherFolder) + (gameName to options)
     optionsFile(launcherFolder).writeText(json.encodeToString(all))
+}
+
+/**
+ * #19 - the full extra-argument list a game's saved GameOptions produces,
+ * in the same order Android's MainActivity.kt builds it: bezel, then the
+ * three plain flags, then custom arguments last.
+ */
+fun launchArgumentsFor(installRoot: File, options: GameOptions, gameName: String): List<String> {
+    val args = mutableListOf<String>()
+    if (options.bezelEnabled) args += bezelLaunchArgs(installRoot, gameName)
+    if (options.scorebezelAutofit) args += "-scorebezel_autofit"
+    if (options.overlayBezel) args += "-overlaybezel"
+    if (options.aspectBezelFix) args += "-aspectbezelfix"
+    args += options.arguments
+    return args
 }
