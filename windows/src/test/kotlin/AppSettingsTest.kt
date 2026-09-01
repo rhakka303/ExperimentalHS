@@ -19,6 +19,7 @@ class AppSettingsTest {
         assertFalse(settings.defaultArtEnabled)
         assertFalse(settings.preserveAspectRatioEnabled)
         assertFalse(settings.fullscreenEnabled)
+        assertFalse(settings.gamepadEnabled)
     }
 
     @Test
@@ -44,11 +45,27 @@ class AppSettingsTest {
             backgroundArtEnabled = true,
             defaultArtEnabled = true,
             preserveAspectRatioEnabled = true,
+            fullscreenEnabled = true,
+            gamepadEnabled = true,
         )
 
         saveAppSettings(launcherFolder, saved)
 
         assertEquals(saved, loadAppSettings(launcherFolder))
+    }
+
+    @Test
+    fun `an app_settings file written before gamepadEnabled existed still loads, defaulting to false`() {
+        // #46 - a real pre-#46 app_settings.json: gamepadEnabled is
+        // simply absent from the JSON, not present-and-false.
+        File(launcherFolder, "app_settings.json").writeText(
+            """{"globalCoverArtEnabled":false,"globalCoverArtType":"BOX","backgroundArtEnabled":false,"defaultArtEnabled":false,"preserveAspectRatioEnabled":false,"fullscreenEnabled":true}""",
+        )
+
+        val settings = loadAppSettings(launcherFolder)
+
+        assertFalse(settings.gamepadEnabled)
+        assertEquals(true, settings.fullscreenEnabled)
     }
 
     @Test

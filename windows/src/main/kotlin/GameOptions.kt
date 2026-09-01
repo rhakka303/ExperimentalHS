@@ -101,12 +101,19 @@ fun saveOptions(launcherFolder: File, gameName: String, options: GameOptions) {
  * Android's own launchGame() puts it: after aspectBezelFix, before custom
  * arguments. Defaults to false so this stays source-compatible for any
  * caller that predates #32.
+ *
+ * #46 - gamepadEnabled is another app-level flag, same category and
+ * default-false-for-compatibility reasoning as preserveAspectRatioEnabled.
+ * Confirmed real: -gamepad is documented in doc/CmdLine.md ("Enable
+ * SDL_Gamepad configuration") and implemented in cmdline.cpp - a plain
+ * flag, same as the others here, not a value/ini setting.
  */
 fun launchArgumentsFor(
     installRoot: File,
     options: GameOptions,
     gameName: String,
     preserveAspectRatioEnabled: Boolean = false,
+    gamepadEnabled: Boolean = false,
 ): List<String> {
     val args = mutableListOf<String>()
     if (options.bezelEnabled) args += bezelLaunchArgs(installRoot, gameName)
@@ -114,6 +121,7 @@ fun launchArgumentsFor(
     if (options.overlayBezel) args += "-overlaybezel"
     if (options.aspectBezelFix) args += "-aspectbezelfix"
     if (preserveAspectRatioEnabled) args += "-preserve_aspect_ratio"
+    if (gamepadEnabled) args += "-gamepad"
     args += options.arguments
     return args
 }
