@@ -1,3 +1,4 @@
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
@@ -55,13 +56,16 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.res.loadImageBitmap
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import java.io.File
+import java.io.IOException
 import kotlin.math.absoluteValue
 import kotlinx.coroutines.launch
 
@@ -180,6 +184,24 @@ private fun GameCarousel(
     val focusRequester = remember { FocusRequester() }
     var hasRequestedInitialFocus by remember { mutableStateOf(false) }
 
+    // #28 - loaded once per carousel composition, not per-card: GameCarousel
+    // is torn down and recreated whenever the screen navigates away and
+    // back (see #19's comment on carouselPage above), which is what keeps
+    // this fresh after a trip to the options or settings screens without
+    // needing its own reload trigger.
+    val mediaFolder = remember(installRoot) { resolveMediaFolder(installRoot) }
+    val appSettings = remember(launcherFolder) {
+        launcherFolder?.let { loadAppSettings(it) } ?: AppSettings()
+    }
+    val gameOptionsMap = remember(launcherFolder, games) {
+        launcherFolder?.let { loadAllOptions(it) } ?: emptyMap()
+    }
+
+    // #28 - see GameCardArt.kt's effectiveCoverArtFile for the real
+    // Global-vs-per-game precedence rule this wraps.
+    fun coverArtFileFor(game: Game): File? =
+        effectiveCoverArtFile(mediaFolder, game.name, appSettings, gameOptionsMap[game.name])
+
     LaunchedEffect(pagerState) {
         snapshotFlow { pagerState.currentPage }.collect { onPageChanged(it) }
     }
@@ -270,6 +292,7 @@ private fun GameCarousel(
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 GameCard(
                     game = game,
+                    coverArtFile = coverArtFileFor(game),
                     scale = scale,
                     onClick = { launchGame(game, installRoot, extraArgsFor(game)) },
                     onOpenOptions = { onOpenOptions(game) },
@@ -303,8 +326,14 @@ private fun GameCarousel(
     }
 }
 
+// loadImageBitmap is deprecated in favor of Compose's bundled resources
+// library - that migration is for compile-time app assets, not runtime
+// files from an external media/ folder chosen by the user (or, once #26
+// has an override, a folder outside the app entirely), which is exactly
+// what this reads. It's the right tool for this job, not an oversight.
+@Suppress("DEPRECATION")
 @Composable
-private fun GameCard(game: Game, scale: Float, onClick: () -> Unit, onOpenOptions: () -> Unit) {
+private fun GameCard(game: Game, coverArtFile: File?, scale: Float, onClick: () -> Unit, onOpenOptions: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxHeight(0.8f)
@@ -318,7 +347,32 @@ private fun GameCard(game: Game, scale: Float, onClick: () -> Unit, onOpenOption
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Text(game.name, textAlign = TextAlign.Center, modifier = Modifier.padding(12.dp))
+        // #28 - a TEXT type and a missing file both resolve to null from
+        // #27's coverArtFile()/resolveCoverArtFile(), and deliberately
+        // share this same plain-text fallback rather than two different
+        // empty states. No caching/preloading beyond what remember()
+        // already gives for free - not a performance story (#95's
+        // crossfade equivalent is explicitly out of scope here).
+        val coverArtBitmap = remember(coverArtFile) {
+            coverArtFile?.let { file ->
+                try {
+                    file.inputStream().buffered().use(::loadImageBitmap)
+                } catch (e: IOException) {
+                    null
+                }
+            }
+        }
+
+        if (coverArtBitmap != null) {
+            Image(
+                bitmap = coverArtBitmap,
+                contentDescription = game.name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            Text(game.name, textAlign = TextAlign.Center, modifier = Modifier.padding(12.dp))
+        }
 
         // #19 - gear icon, top-right corner, consistent position
         // regardless of card scale. A semi-transparent dark scrim behind
