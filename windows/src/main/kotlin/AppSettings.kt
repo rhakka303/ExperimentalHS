@@ -38,6 +38,13 @@ data class AppSettings(
     val preserveAspectRatioEnabled: Boolean = false,
     val fullscreenEnabled: Boolean = false,
     val gamepadEnabled: Boolean = false,
+    // Real, live-found gap: -fullscreen (the hypseus launch arg that puts
+    // the *game itself* full screen, not this launcher's own window -
+    // see fullscreenEnabled above for that) was hardcoded unconditionally
+    // in LaunchArgs.kt's buildLaunchArgs() instead of being a real
+    // setting. Default true so existing installs see no behavior change
+    // now that it's configurable - previously it was always on.
+    val gameFullscreenEnabled: Boolean = true,
 )
 
 private val json = Json { ignoreUnknownKeys = true }

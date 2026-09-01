@@ -48,10 +48,15 @@ class GameOptionsTest {
     }
 
     // --- launchArgumentsFor / #32 ---
+    // gameFullscreenEnabled = false explicitly in every test below that
+    // isn't itself about that flag - it defaults to true (#20 follow-up:
+    // see AppSettings.gameFullscreenEnabled's own doc comment for why),
+    // which would otherwise inject an unrelated -fullscreen into these
+    // exact-list assertions.
 
     @Test
     fun `preserveAspectRatioEnabled defaults to off and adds no argument`() {
-        val args = launchArgumentsFor(launcherFolder, GameOptions(), "dragons_lair")
+        val args = launchArgumentsFor(launcherFolder, GameOptions(), "dragons_lair", gameFullscreenEnabled = false)
 
         assertEquals(emptyList(), args)
     }
@@ -63,7 +68,7 @@ class GameOptionsTest {
             arguments = listOf("-fastboot"),
         )
 
-        val args = launchArgumentsFor(launcherFolder, options, "dragons_lair", preserveAspectRatioEnabled = true)
+        val args = launchArgumentsFor(launcherFolder, options, "dragons_lair", preserveAspectRatioEnabled = true, gameFullscreenEnabled = false)
 
         assertEquals(listOf("-aspectbezelfix", "-preserve_aspect_ratio", "-fastboot"), args)
     }
@@ -72,7 +77,7 @@ class GameOptionsTest {
 
     @Test
     fun `gamepadEnabled defaults to off and adds no argument`() {
-        val args = launchArgumentsFor(launcherFolder, GameOptions(), "dragons_lair")
+        val args = launchArgumentsFor(launcherFolder, GameOptions(), "dragons_lair", gameFullscreenEnabled = false)
 
         assertEquals(emptyList(), args)
     }
@@ -87,8 +92,45 @@ class GameOptionsTest {
             "dragons_lair",
             preserveAspectRatioEnabled = true,
             gamepadEnabled = true,
+            gameFullscreenEnabled = false,
         )
 
         assertEquals(listOf("-preserve_aspect_ratio", "-gamepad", "-fastboot"), args)
+    }
+
+    // --- launchArgumentsFor / #20 follow-up (gameFullscreenEnabled) ---
+    // Real, live-found gap: -fullscreen used to be hardcoded
+    // unconditionally in LaunchArgs.kt instead of living here - defaults
+    // to true (not false, unlike every other flag above) to match that
+    // previous always-on behavior for anyone already using this app.
+
+    @Test
+    fun `gameFullscreenEnabled defaults to on and appends -fullscreen`() {
+        val args = launchArgumentsFor(launcherFolder, GameOptions(), "dragons_lair")
+
+        assertEquals(listOf("-fullscreen"), args)
+    }
+
+    @Test
+    fun `gameFullscreenEnabled appends -fullscreen after -gamepad and before custom arguments`() {
+        val options = GameOptions(arguments = listOf("-fastboot"))
+
+        val args = launchArgumentsFor(
+            launcherFolder,
+            options,
+            "dragons_lair",
+            preserveAspectRatioEnabled = true,
+            gamepadEnabled = true,
+            gameFullscreenEnabled = true,
+        )
+
+        assertEquals(listOf("-preserve_aspect_ratio", "-gamepad", "-fullscreen", "-fastboot"), args)
+    }
+
+    @Test
+    fun `gameFullscreenEnabled off adds no argument`() {
+        val args = launchArgumentsFor(launcherFolder, GameOptions(), "dragons_lair", gameFullscreenEnabled = false)
+
+        assertEquals(emptyList(), args)
     }
 }
