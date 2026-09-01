@@ -1080,6 +1080,16 @@ private fun GameOptionsScreen(game: Game, launcherFolder: File?, onOpenGameHack:
                                     style = MaterialTheme.typography.bodyMedium,
                                 )
                                 Text("Makes overlays a priority", style = MaterialTheme.typography.bodySmall)
+                                // #89 - real version risk, same reasoning
+                                // and wording as Preserve Video Aspect
+                                // Ratio's own identical warning (#32):
+                                // per the owner, -overlaybezel is a new
+                                // fix specific to hypseus-singe 3.0.2.
+                                Text(
+                                    "Requires hypseus-singe 3.0.2 or newer. Older installs will show an error on launch if this is on.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
                             }
                             Switch(
                                 checked = options.overlayBezel,
