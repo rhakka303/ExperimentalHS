@@ -88,3 +88,14 @@ fun resolveInstallRoot(): File? {
     val exePath = ProcessHandle.current().info().command().orElse(null) ?: return null
     return File(exePath).parentFile?.parentFile
 }
+
+/**
+ * #18 - one level up from resolveInstallRoot(): the launcher's own
+ * folder (`HypdroidDesktop/`), where its own state lives per #6's
+ * ownership rule. Same "only meaningful for the packaged app" caveat as
+ * resolveInstallRoot() above.
+ */
+fun resolveLauncherFolder(): File? {
+    val exePath = ProcessHandle.current().info().command().orElse(null) ?: return null
+    return File(exePath).parentFile
+}

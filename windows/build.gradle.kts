@@ -8,6 +8,10 @@ plugins {
     kotlin("jvm") version "2.1.21"
     id("org.jetbrains.compose") version "1.8.2"
     id("org.jetbrains.kotlin.plugin.compose") version "2.1.21"
+    // #18 - per-game options persistence needs real JSON, not hand-rolled
+    // parsing. kotlinx.serialization is the idiomatic Kotlin choice and
+    // needs its own compiler plugin.
+    id("org.jetbrains.kotlin.plugin.serialization") version "2.1.21"
 }
 
 repositories {
@@ -25,6 +29,8 @@ dependencies {
     // basic ArrowBack/ArrowForward icons aren't pulled in by material3
     // alone.
     implementation(compose.materialIconsExtended)
+    // #18 - per-game options JSON.
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 }
 
 compose.desktop {
