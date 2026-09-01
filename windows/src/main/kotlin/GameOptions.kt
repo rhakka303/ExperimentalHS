@@ -95,13 +95,25 @@ fun saveOptions(launcherFolder: File, gameName: String, options: GameOptions) {
  * #19 - the full extra-argument list a game's saved GameOptions produces,
  * in the same order Android's MainActivity.kt builds it: bezel, then the
  * three plain flags, then custom arguments last.
+ *
+ * #32 - preserveAspectRatioEnabled is an app-level setting (#31), not a
+ * per-game one, but it slots into this same list at the same position
+ * Android's own launchGame() puts it: after aspectBezelFix, before custom
+ * arguments. Defaults to false so this stays source-compatible for any
+ * caller that predates #32.
  */
-fun launchArgumentsFor(installRoot: File, options: GameOptions, gameName: String): List<String> {
+fun launchArgumentsFor(
+    installRoot: File,
+    options: GameOptions,
+    gameName: String,
+    preserveAspectRatioEnabled: Boolean = false,
+): List<String> {
     val args = mutableListOf<String>()
     if (options.bezelEnabled) args += bezelLaunchArgs(installRoot, gameName)
     if (options.scorebezelAutofit) args += "-scorebezel_autofit"
     if (options.overlayBezel) args += "-overlaybezel"
     if (options.aspectBezelFix) args += "-aspectbezelfix"
+    if (preserveAspectRatioEnabled) args += "-preserve_aspect_ratio"
     args += options.arguments
     return args
 }
