@@ -30,6 +30,11 @@ import kotlinx.serialization.json.Json
  * exist - confirmed true right now for all three real test games in
  * smoke/ (their bezels/ folder has no matching PNGs), same situation
  * Android's own code already handles gracefully.
+ *
+ * #30 - coverArtOverride: this game's own CoverArtType, or null to use
+ * the app default (BOX) - see resolveCoverArtFile() in CoverArt.kt (#27).
+ * Unlike bezelEnabled/scorebezelAutofit/etc, this isn't a launch-arg flag
+ * at all - it only affects what #28's carousel card renders.
  */
 @Serializable
 data class GameOptions(
@@ -38,6 +43,7 @@ data class GameOptions(
     val scorebezelAutofit: Boolean = false,
     val overlayBezel: Boolean = false,
     val aspectBezelFix: Boolean = false,
+    val coverArtOverride: CoverArtType? = null,
 )
 
 /**

@@ -58,6 +58,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import java.io.File
@@ -353,6 +354,7 @@ private fun GameOptionsScreen(game: Game, launcherFolder: File?, onOpenGameHack:
         mutableStateOf(if (launcherFolder != null) loadOptions(launcherFolder, game.name) else GameOptions())
     }
     var newArgument by remember(game) { mutableStateOf("") }
+    var showCoverArtPicker by remember(game) { mutableStateOf(false) }
 
     fun persist(updated: GameOptions) {
         options = updated
@@ -403,13 +405,18 @@ private fun GameOptionsScreen(game: Game, launcherFolder: File?, onOpenGameHack:
 
         Row(modifier = Modifier.fillMaxWidth().padding(top = 24.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(modifier = Modifier.weight(1f)) {
-                // #19 - stub: no cover-art system exists on Windows yet
-                // (phase 3). Shown so the screen matches Android's layout
-                // rather than looking sparse, but "Change" does nothing.
+                // #30 - real per-game Cover Art override. Shows the
+                // resolved effective type (override, else BOX) -
+                // confirmed on a real device that a game with no override
+                // still shows BOX, not a blank state.
                 OutlinedCard {
                     Column(modifier = Modifier.padding(12.dp)) {
-                        Text("Cover Art", style = MaterialTheme.typography.titleMedium)
-                        Text("Not available yet (phase 3)", style = MaterialTheme.typography.bodySmall)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Cover Art", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                            Button(onClick = { showCoverArtPicker = true }) { Text("Change") }
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text((options.coverArtOverride ?: CoverArtType.BOX).name, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
 
@@ -524,6 +531,54 @@ private fun GameOptionsScreen(game: Game, launcherFolder: File?, onOpenGameHack:
                         }
                     }
                 }
+            }
+        }
+    }
+
+    if (showCoverArtPicker) {
+        CoverArtPickerDialog(
+            onSelect = { type ->
+                persist(options.copy(coverArtOverride = type))
+                showCoverArtPicker = false
+            },
+            onDismiss = { showCoverArtPicker = false },
+        )
+    }
+}
+
+/**
+ * #30 - shared cover art type picker: CD/LOGO/BOX/TEXT/Cancel, confirmed
+ * against two real screenshots (per-game and, later, #31's Global Cover
+ * Art) - both use the exact same dialog shape on the real Android app,
+ * which is why this is a standalone composable rather than something
+ * built separately per screen.
+ */
+@Composable
+private fun CoverArtPickerDialog(onSelect: (CoverArtType) -> Unit, onDismiss: () -> Unit) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = RoundedCornerShape(16.dp), tonalElevation = 4.dp) {
+            Column(modifier = Modifier.padding(24.dp)) {
+                Text("Cover Art", style = MaterialTheme.typography.headlineSmall)
+                Spacer(modifier = Modifier.height(16.dp))
+                CoverArtType.entries.forEach { type ->
+                    Text(
+                        type.name,
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(type) }
+                            .padding(vertical = 12.dp),
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "Cancel",
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier
+                        .align(Alignment.End)
+                        .clickable(onClick = onDismiss)
+                        .padding(8.dp),
+                )
             }
         }
     }
