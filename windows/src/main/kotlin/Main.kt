@@ -63,7 +63,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.Window
+import androidx.compose.ui.window.WindowPlacement
+import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.application
+import androidx.compose.ui.window.rememberWindowState
 import java.io.File
 import java.io.IOException
 import kotlin.math.absoluteValue
@@ -80,6 +83,10 @@ private sealed interface Screen {
     // desktop, and #41 ruled out a media folder picker permanently
     // (fixed, auto-created location, not user-configurable).
     data object AppSettings : Screen
+    // #43 - real content on day one, not a blank stub like Controls/About:
+    // Preserve Video Aspect Ratio moved here from AppSettings, plus the
+    // new Full Screen toggle.
+    data object VideoSettings : Screen
     data object Controls : Screen
     data object About : Screen
     data class GameOptionsFor(val game: Game) : Screen
@@ -89,13 +96,37 @@ private sealed interface Screen {
 /**
  * #17 - carousel UI, replacing #11's plain list. #19 adds the per-game
  * options screen, the Game Hacks screen, and navigation between all three.
+ *
+ * #43 - launcherFolder is resolved here, before Window() rather than
+ * inside its content, specifically so the initial AppSettings load (and
+ * therefore the initial WindowState.placement) is known before the
+ * window is ever shown - avoids a windowed-then-fullscreen flash on
+ * startup. windowState itself is created here and threaded down to
+ * VideoSettingsScreen (to react to the Full Screen toggle) and
+ * GameCarousel (to know whether Full Screen is on, for the X close icon
+ * and Escape-quits behavior) - the first piece of state in this project
+ * that needs to reach both the top-level Window and deep into the
+ * composable tree at once.
  */
 fun main() = application {
-    Window(onCloseRequest = ::exitApplication, title = "HypdroidDesktop") {
+    val launcherFolder = remember { resolveLauncherFolder() }
+    val initialFullscreenEnabled = remember(launcherFolder) {
+        launcherFolder?.let { loadAppSettings(it).fullscreenEnabled } ?: false
+    }
+    // #43 - windowed mode always launches maximized, never minimized:
+    // the app was observed launching minimized in practice, which turned
+    // out to be nothing more than the OS/JVM default for a Window with
+    // no explicit WindowState at all - not a deliberate choice anywhere
+    // in this code. Passing a real WindowState here is the actual fix,
+    // not a workaround.
+    val windowState = rememberWindowState(
+        placement = if (initialFullscreenEnabled) WindowPlacement.Fullscreen else WindowPlacement.Maximized,
+    )
+
+    Window(onCloseRequest = ::exitApplication, title = "HypdroidDesktop", state = windowState) {
         MaterialTheme {
             Surface(modifier = Modifier.fillMaxSize()) {
                 val installRoot = remember { resolveInstallRoot() }
-                val launcherFolder = remember { resolveLauncherFolder() }
 
                 when {
                     installRoot == null -> Text(
@@ -113,7 +144,13 @@ fun main() = application {
                                 modifier = Modifier.padding(16.dp),
                             )
                         } else {
-                            HypdroidApp(games = result.games, installRoot = installRoot, launcherFolder = launcherFolder)
+                            HypdroidApp(
+                                games = result.games,
+                                installRoot = installRoot,
+                                launcherFolder = launcherFolder,
+                                windowState = windowState,
+                                onQuit = ::exitApplication,
+                            )
                         }
                     }
                 }
@@ -123,7 +160,13 @@ fun main() = application {
 }
 
 @Composable
-private fun HypdroidApp(games: List<Game>, installRoot: File, launcherFolder: File?) {
+private fun HypdroidApp(
+    games: List<Game>,
+    installRoot: File,
+    launcherFolder: File?,
+    windowState: WindowState,
+    onQuit: () -> Unit,
+) {
     // #19 - lifted out of GameCarousel so the pager's position survives a
     // trip to another screen and back ("Back returns to the carousel, on
     // the same card that was open"). GameCarousel gets torn down and
@@ -142,14 +185,21 @@ private fun HypdroidApp(games: List<Game>, installRoot: File, launcherFolder: Fi
             onPageChanged = { carouselPage = it },
             onOpenOptions = { screen = Screen.GameOptionsFor(it) },
             onOpenSettings = { screen = Screen.Settings },
+            onQuit = onQuit,
         )
         is Screen.Settings -> SettingsScreen(
             onOpenAppSettings = { screen = Screen.AppSettings },
             onOpenControls = { screen = Screen.Controls },
             onOpenAbout = { screen = Screen.About },
+            onOpenVideoSettings = { screen = Screen.VideoSettings },
             onBack = { screen = Screen.Carousel },
         )
         is Screen.AppSettings -> AppSettingsScreen(launcherFolder = launcherFolder, onBack = { screen = Screen.Settings })
+        is Screen.VideoSettings -> VideoSettingsScreen(
+            launcherFolder = launcherFolder,
+            windowState = windowState,
+            onBack = { screen = Screen.Settings },
+        )
         is Screen.Controls -> BlankPlaceholderScreen("Controls", onBack = { screen = Screen.Settings })
         is Screen.About -> BlankPlaceholderScreen("About", onBack = { screen = Screen.Settings })
         is Screen.GameOptionsFor -> GameOptionsScreen(
@@ -178,6 +228,7 @@ private fun GameCarousel(
     onPageChanged: (Int) -> Unit,
     onOpenOptions: (Game) -> Unit,
     onOpenSettings: () -> Unit,
+    onQuit: () -> Unit,
 ) {
     val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { games.size })
     val coroutineScope = rememberCoroutineScope()
@@ -329,6 +380,21 @@ private fun GameCarousel(
                             pageRight()
                             true
                         }
+                        // #43 - carousel/home screen only: every other
+                        // screen keeps its own existing Escape-to-back
+                        // behavior untouched. Only quits while Full Screen
+                        // is on - off means windowed mode, where Escape on
+                        // the carousel does nothing (there's no back
+                        // destination from the home screen), matching the
+                        // owner's own description exactly.
+                        Key.Escape -> {
+                            if (appSettings.fullscreenEnabled) {
+                                onQuit()
+                                true
+                            } else {
+                                false
+                            }
+                        }
                         else -> false
                     }
                 },
@@ -362,13 +428,41 @@ private fun GameCarousel(
             Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Next game")
         }
 
-        // #24 - Settings entry point, matching Android's top-bar gear
-        // placement.
-        IconButton(
-            onClick = onOpenSettings,
+        // #43/#39 - top-right icon cluster: an optional X (quits the app,
+        // shown only while Full Screen is on - windowed mode already has
+        // the OS title bar's own close button, so a second one would be
+        // redundant) plus the existing Settings gear (#24). Both share the
+        // same semi-transparent dark scrim circle #19 already established
+        // for each card's own gear icon, applied here for the first time
+        // to these top-level icons - fixes #39's low-contrast-against-
+        // real-background-art finding as a natural consequence of putting
+        // the X right next to it, not a separate change.
+        Row(
             modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Icon(Icons.Filled.Settings, contentDescription = "Settings")
+            if (appSettings.fullscreenEnabled) {
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.5f))
+                        .clickable(onClick = onQuit),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Filled.Close, contentDescription = "Quit", tint = Color.White)
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.5f))
+                    .clickable(onClick = onOpenSettings),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = Color.White)
+            }
         }
     }
 }
@@ -777,13 +871,12 @@ private fun GameHackScreen(game: Game, launcherFolder: File?, onBack: () -> Unit
 /**
  * #31 - replaces #24's stub with real content, matching the real Android
  * AppSettingsScreen exactly (confirmed against two live screenshots from
- * a real device): Global Cover Art + Background Art side by side,
- * Preserve Video Aspect Ratio below.
+ * a real device): Global Cover Art + Background Art side by side.
  *
- * Preserve Video Aspect Ratio's toggle exists and persists here since it
- * lives on the same real screen, but appending the actual
- * -preserve_aspect_ratio launch arg (and the real hypseus-singe 3.0.2+
- * version risk that comes with it) is #32's job, not this story's.
+ * Originally had a third row for Preserve Video Aspect Ratio too - #43
+ * moved that toggle's UI to the new VideoSettingsScreen (the field itself,
+ * AppSettings.preserveAspectRatioEnabled, is unchanged; this was purely a
+ * relocation).
  */
 @Composable
 private fun AppSettingsScreen(launcherFolder: File?, onBack: () -> Unit) {
@@ -906,8 +999,82 @@ private fun AppSettingsScreen(launcherFolder: File?, onBack: () -> Unit) {
                 }
             }
         }
+    }
 
-        Spacer(modifier = Modifier.height(12.dp))
+    if (showGlobalCoverArtPicker) {
+        CoverArtPickerDialog(
+            onSelect = { type ->
+                persist(settings.copy(globalCoverArtType = type))
+                showGlobalCoverArtPicker = false
+            },
+            onDismiss = { showGlobalCoverArtPicker = false },
+        )
+    }
+}
+
+/**
+ * #43 - real content on day one, not a blank stub: Preserve Video Aspect
+ * Ratio (relocated verbatim from AppSettingsScreen, including #32's
+ * version-risk caption) plus a new Full Screen toggle.
+ *
+ * Full Screen is a genuinely different category of setting from every
+ * other toggle in this app - it controls the *launcher's own window*
+ * (windowState, threaded all the way down from main()), not a hypseus
+ * launch arg or a plain persisted value nothing else reads live. Flipping
+ * it mutates windowState.placement directly, in addition to persisting
+ * fullscreenEnabled - the persisted value is what main() reads on the
+ * *next* launch (see its own comment), not what drives the *current*
+ * window, which windowState.placement already does live via Window's own
+ * observation of it.
+ */
+@Composable
+private fun VideoSettingsScreen(launcherFolder: File?, windowState: WindowState, onBack: () -> Unit) {
+    var settings by remember {
+        mutableStateOf(if (launcherFolder != null) loadAppSettings(launcherFolder) else AppSettings())
+    }
+
+    fun persist(updated: AppSettings) {
+        settings = updated
+        if (launcherFolder != null) saveAppSettings(launcherFolder, updated)
+    }
+
+    val focusRequester = remember { FocusRequester() }
+    var hasRequestedInitialFocus by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+            .focusRequester(focusRequester)
+            .onGloballyPositioned {
+                if (!hasRequestedInitialFocus) {
+                    hasRequestedInitialFocus = true
+                    try {
+                        focusRequester.requestFocus()
+                    } catch (e: IllegalStateException) {
+                        // see #17's identical guard on GameCarousel
+                    }
+                }
+            }
+            .focusable()
+            .onKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
+                    onBack()
+                    true
+                } else {
+                    false
+                }
+            },
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Video Settings", style = MaterialTheme.typography.titleLarge)
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
 
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedCard(modifier = Modifier.weight(1f)) {
@@ -942,22 +1109,28 @@ private fun AppSettingsScreen(launcherFolder: File?, onBack: () -> Unit) {
                     }
                 }
             }
-            // No second card to pair this with yet - an invisible spacer
-            // claims the other half of the row so this card stays the
-            // same size as its siblings above, matching the real Android
-            // layout's own spacer for the same reason.
-            Spacer(modifier = Modifier.weight(1f))
-        }
-    }
 
-    if (showGlobalCoverArtPicker) {
-        CoverArtPickerDialog(
-            onSelect = { type ->
-                persist(settings.copy(globalCoverArtType = type))
-                showGlobalCoverArtPicker = false
-            },
-            onDismiss = { showGlobalCoverArtPicker = false },
-        )
+            OutlinedCard(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Full Screen", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                "On: full screen. Off: windowed mode.",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                        Switch(
+                            checked = settings.fullscreenEnabled,
+                            onCheckedChange = { enabled ->
+                                persist(settings.copy(fullscreenEnabled = enabled))
+                                windowState.placement = if (enabled) WindowPlacement.Fullscreen else WindowPlacement.Maximized
+                            },
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -976,12 +1149,16 @@ private fun AppSettingsScreen(launcherFolder: File?, onBack: () -> Unit) {
  * to manage). Owner's layout: App Settings top-left, Controls top-right,
  * About underneath App Settings - bottom-right cell left empty rather
  * than stretched.
+ *
+ * #43 - the empty bottom-right cell gets a fourth real card, "Video
+ * Settings", rather than staying empty forever.
  */
 @Composable
 private fun SettingsScreen(
     onOpenAppSettings: () -> Unit,
     onOpenControls: () -> Unit,
     onOpenAbout: () -> Unit,
+    onOpenVideoSettings: () -> Unit,
     onBack: () -> Unit,
 ) {
     val focusRequester = remember { FocusRequester() }
@@ -1029,9 +1206,7 @@ private fun SettingsScreen(
         Spacer(modifier = Modifier.height(12.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             SettingsCard("About", "Build info, credits, open source", Modifier.weight(1f), onOpenAbout)
-            // No card to pair About with - bottom-right cell stays empty
-            // rather than stretched, matching the owner's layout exactly.
-            Spacer(modifier = Modifier.weight(1f))
+            SettingsCard("Video Settings", "Aspect ratio, full screen mode", Modifier.weight(1f), onOpenVideoSettings)
         }
     }
 }

@@ -15,10 +15,14 @@ import kotlinx.serialization.json.Json
  * two live screenshots from a real device): Global Cover Art, Background
  * Art, Default Art, and Preserve Video Aspect Ratio.
  *
- * preserveAspectRatioEnabled: this story only needs the toggle to exist
- * and persist since it lives on the same real screen - the actual
- * `-preserve_aspect_ratio` launch-arg behavior (and its real hypseus-singe
- * 3.0.2+ version risk) is #32's job, not this one's.
+ * preserveAspectRatioEnabled: originally shown on this same screen; #43
+ * moved its UI to a new VideoSettingsScreen, but the field itself stays
+ * here unchanged - purely a UI relocation, not a storage change.
+ *
+ * fullscreenEnabled (#43): controls the *launcher's own window*, not a
+ * hypseus launch arg - a different category from every other field here.
+ * Default false (windowed, and specifically WindowPlacement.Maximized -
+ * see main()'s own comment for why that fix belongs there, not here).
  */
 @Serializable
 data class AppSettings(
@@ -27,6 +31,7 @@ data class AppSettings(
     val backgroundArtEnabled: Boolean = false,
     val defaultArtEnabled: Boolean = false,
     val preserveAspectRatioEnabled: Boolean = false,
+    val fullscreenEnabled: Boolean = false,
 )
 
 private val json = Json { ignoreUnknownKeys = true }

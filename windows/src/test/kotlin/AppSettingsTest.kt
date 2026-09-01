@@ -18,6 +18,22 @@ class AppSettingsTest {
         assertFalse(settings.backgroundArtEnabled)
         assertFalse(settings.defaultArtEnabled)
         assertFalse(settings.preserveAspectRatioEnabled)
+        assertFalse(settings.fullscreenEnabled)
+    }
+
+    @Test
+    fun `an app_settings file written before fullscreenEnabled existed still loads, defaulting to false`() {
+        // #43 - a real pre-#43 app_settings.json: fullscreenEnabled is
+        // simply absent from the JSON, not present-and-false.
+        File(launcherFolder, "app_settings.json").writeText(
+            """{"globalCoverArtEnabled":true,"globalCoverArtType":"LOGO","backgroundArtEnabled":false,"defaultArtEnabled":false,"preserveAspectRatioEnabled":true}""",
+        )
+
+        val settings = loadAppSettings(launcherFolder)
+
+        assertFalse(settings.fullscreenEnabled)
+        assertEquals(CoverArtType.LOGO, settings.globalCoverArtType)
+        assertEquals(true, settings.preserveAspectRatioEnabled)
     }
 
     @Test
