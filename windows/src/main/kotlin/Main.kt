@@ -51,6 +51,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -1819,9 +1820,20 @@ private fun ControlsScreen(
     var listeningForKeyName by remember { mutableStateOf<String?>(null) }
 
     // #48 - which row/slot's token picker is open, or null. The chevron
-    // path (Controller 1/Controller 2), not live capture - no gamepad
-    // input API exists to capture from yet (phase 4).
+    // path (Controller 1/Controller 2's manual list), unchanged by #80's
+    // own addition below.
     var tokenPickerRequest by remember { mutableStateOf<TokenPickerRequest?>(null) }
+
+    // #80 - live capture's own listening state: which row+slot is
+    // currently waiting for a real button press/stick movement, or null.
+    // A separate pair of vars (not one combined object) so each reads
+    // cleanly as its own condition at every call site below - same
+    // reasoning as listeningForKeyName just above staying its own var
+    // rather than folding into some larger "what's this screen doing"
+    // state.
+    var listeningForControllerKeyName by remember { mutableStateOf<String?>(null) }
+    var listeningForControllerSlot by remember { mutableStateOf<BindingSlot?>(null) }
+
     fun writeBinding(keyName: String, slot: BindingSlot, token: String) {
         val current = iniText ?: return
         val updated = updateGamepadBinding(current, keyName, slot, token)
@@ -1853,6 +1865,65 @@ private fun ControlsScreen(
         listeningForKeyName = null
     }
 
+    // #80 - starts a live-capture request: records which row+slot this
+    // screen itself is waiting on (drives the pill's "Press a button…"/
+    // "Move a stick…" label) and tells the background polling thread
+    // what kind of input to listen for. slot decides both which
+    // BindingSlot writeBinding eventually uses and which CaptureKind the
+    // polling thread listens for - Button pills always resolve to a
+    // *_BUTTON slot, Axis pills to an AXIS_* slot, so the mapping below
+    // is exhaustive without needing a separate kind parameter here.
+    fun startListeningController(keyName: String, slot: BindingSlot) {
+        listeningForControllerKeyName = keyName
+        listeningForControllerSlot = slot
+        val kind = when (slot) {
+            BindingSlot.PAD0_BUTTON, BindingSlot.PAD1_BUTTON -> CaptureKind.BUTTON
+            BindingSlot.AXIS_PAD0, BindingSlot.AXIS_PAD1 -> CaptureKind.AXIS
+            BindingSlot.KEY1, BindingSlot.KEY2 -> return // unreachable from this screen's controller UI
+        }
+        GamepadCaptureBus.startCapture(kind)
+    }
+
+    fun cancelListeningController() {
+        listeningForControllerKeyName = null
+        listeningForControllerSlot = null
+        GamepadCaptureBus.cancelCapture()
+    }
+
+    // #80 - the background polling thread (GamepadCaptureBus, its own
+    // separate channel from GamepadInputBus above) emits here once it
+    // captures a real token. listeningForControllerKeyName/Slot are read
+    // live (State-backed vars, not a derived val closed over at
+    // composition time) so this stays correct even though - like every
+    // other gamepad LaunchedEffect(Unit) in this app - the coroutine
+    // itself is only ever launched once. See #76's own identical
+    // rememberUpdatedState fix/comment for the failure mode this avoids.
+    LaunchedEffect(Unit) {
+        GamepadCaptureBus.captured.collect { token ->
+            val keyName = listeningForControllerKeyName ?: return@collect
+            val slot = listeningForControllerSlot ?: return@collect
+            writeBinding(keyName, slot, token)
+            listeningForControllerKeyName = null
+            listeningForControllerSlot = null
+        }
+    }
+
+    // #80 - a successful capture already clears GamepadCaptureBus's own
+    // activeCapture (see its emit()), but an *incomplete* one wouldn't:
+    // switching to Keyboard mode mid-listen, or backing out of this
+    // screen entirely, otherwise leaves activeCapture permanently set -
+    // silently suppressing every gamepad navigation action everywhere
+    // else in the app from then on, since the polling thread treats any
+    // non-null activeCapture as "don't emit GamepadInputBus actions this
+    // frame" (see startGamepadInput's own comment). Two different exit
+    // paths, two different Compose tools: mode is plain screen state
+    // (still composed, just showing something else) so a key-based
+    // LaunchedEffect catches every value it changes to; leaving the
+    // screen entirely un-composes it, which only DisposableEffect's own
+    // onDispose observes.
+    LaunchedEffect(mode) { cancelListeningController() }
+    DisposableEffect(Unit) { onDispose { GamepadCaptureBus.cancelCapture() } }
+
     val focusRequester = remember { FocusRequester() }
     var hasRequestedInitialFocus by remember { mutableStateOf(false) }
 
@@ -1880,6 +1951,17 @@ private fun ControlsScreen(
                         captureKey(listening, event.key)
                         true
                     }
+                    // #80 - Escape (keyboard only) cancels an active
+                    // controller live-capture without writing anything;
+                    // every other key is swallowed rather than falling
+                    // through to onBack() below, so a stray keystroke
+                    // while waiting for a gamepad press can't accidentally
+                    // back out of the screen instead.
+                    listeningForControllerKeyName != null && event.key == Key.Escape -> {
+                        cancelListeningController()
+                        true
+                    }
+                    listeningForControllerKeyName != null -> true
                     event.key == Key.Escape -> {
                         onBack()
                         true
@@ -1962,10 +2044,9 @@ private fun ControlsScreen(
                     KeyboardBindingsCard(rows = rows.drop(half), listeningForKeyName = listeningForKeyName, onRowClick = { listeningForKeyName = it }, modifier = Modifier.weight(1f))
                 }
             }
-            // #48 - Controller 1: the chevron/list-picker path, not live
-            // capture - no gamepad input API exists to capture from yet
-            // (phase 4). Pad0Button/AxisPad0 are the real columns for the
-            // first controller.
+            // #48/#80 - Controller 1: the chevron/manual-list path (#48)
+            // plus live capture (#80) side by side. Pad0Button/AxisPad0
+            // are the real columns for the first controller.
             mode == "Controller 1" -> {
                 val half = (rows.size + 1) / 2
                 Row(
@@ -1978,6 +2059,10 @@ private fun ControlsScreen(
                         axisValue = { it.axisPad0 },
                         onPickButton = { keyName -> tokenPickerRequest = TokenPickerRequest(keyName, BindingSlot.PAD0_BUTTON, "Button", VALID_BUTTON_TOKENS) },
                         onPickAxis = { keyName -> tokenPickerRequest = TokenPickerRequest(keyName, BindingSlot.AXIS_PAD0, "Axis", VALID_AXIS_TOKENS) },
+                        listeningKeyName = listeningForControllerKeyName,
+                        listeningSlot = listeningForControllerSlot,
+                        onStartListenButton = { keyName -> startListeningController(keyName, BindingSlot.PAD0_BUTTON) },
+                        onStartListenAxis = { keyName -> startListeningController(keyName, BindingSlot.AXIS_PAD0) },
                         modifier = Modifier.weight(1f),
                     )
                     ControllerBindingsCard(
@@ -1986,17 +2071,21 @@ private fun ControlsScreen(
                         axisValue = { it.axisPad0 },
                         onPickButton = { keyName -> tokenPickerRequest = TokenPickerRequest(keyName, BindingSlot.PAD0_BUTTON, "Button", VALID_BUTTON_TOKENS) },
                         onPickAxis = { keyName -> tokenPickerRequest = TokenPickerRequest(keyName, BindingSlot.AXIS_PAD0, "Axis", VALID_AXIS_TOKENS) },
+                        listeningKeyName = listeningForControllerKeyName,
+                        listeningSlot = listeningForControllerSlot,
+                        onStartListenButton = { keyName -> startListeningController(keyName, BindingSlot.PAD0_BUTTON) },
+                        onStartListenAxis = { keyName -> startListeningController(keyName, BindingSlot.AXIS_PAD0) },
                         modifier = Modifier.weight(1f),
                     )
                 }
             }
-            // #49 - Controller 2: identical shape to Controller 1 (#48),
-            // same ControllerBindingsCard, only the columns read/written
-            // differ (Pad1Button/AxisPad1). Real, not speculative: the
-            // actual smoke/ install's KEY_COIN2/KEY_START2 are genuinely
-            // bound through Pad1 (a real two-controller cabinet setup),
-            // confirmed against the real hypinput_gamepad.ini during
-            // #48/#49's scoping.
+            // #49/#80 - Controller 2: identical shape to Controller 1
+            // (#48/#80), same ControllerBindingsCard, only the columns
+            // read/written differ (Pad1Button/AxisPad1). Real, not
+            // speculative: the actual smoke/ install's KEY_COIN2/
+            // KEY_START2 are genuinely bound through Pad1 (a real two-
+            // controller cabinet setup), confirmed against the real
+            // hypinput_gamepad.ini during #48/#49's scoping.
             mode == "Controller 2" -> {
                 val half = (rows.size + 1) / 2
                 Row(
@@ -2009,6 +2098,10 @@ private fun ControlsScreen(
                         axisValue = { it.axisPad1 },
                         onPickButton = { keyName -> tokenPickerRequest = TokenPickerRequest(keyName, BindingSlot.PAD1_BUTTON, "Button", VALID_BUTTON_TOKENS) },
                         onPickAxis = { keyName -> tokenPickerRequest = TokenPickerRequest(keyName, BindingSlot.AXIS_PAD1, "Axis", VALID_AXIS_TOKENS) },
+                        listeningKeyName = listeningForControllerKeyName,
+                        listeningSlot = listeningForControllerSlot,
+                        onStartListenButton = { keyName -> startListeningController(keyName, BindingSlot.PAD1_BUTTON) },
+                        onStartListenAxis = { keyName -> startListeningController(keyName, BindingSlot.AXIS_PAD1) },
                         modifier = Modifier.weight(1f),
                     )
                     ControllerBindingsCard(
@@ -2017,6 +2110,10 @@ private fun ControlsScreen(
                         axisValue = { it.axisPad1 },
                         onPickButton = { keyName -> tokenPickerRequest = TokenPickerRequest(keyName, BindingSlot.PAD1_BUTTON, "Button", VALID_BUTTON_TOKENS) },
                         onPickAxis = { keyName -> tokenPickerRequest = TokenPickerRequest(keyName, BindingSlot.AXIS_PAD1, "Axis", VALID_AXIS_TOKENS) },
+                        listeningKeyName = listeningForControllerKeyName,
+                        listeningSlot = listeningForControllerSlot,
+                        onStartListenButton = { keyName -> startListeningController(keyName, BindingSlot.PAD1_BUTTON) },
+                        onStartListenAxis = { keyName -> startListeningController(keyName, BindingSlot.AXIS_PAD1) },
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -2144,6 +2241,15 @@ private fun ControllerBindingsCard(
     axisValue: (GamepadRow) -> String,
     onPickButton: (String) -> Unit,
     onPickAxis: (String) -> Unit,
+    // #80 - which row+slot is currently listening for a live capture (or
+    // null), plus the click handlers that start it. Separate from
+    // onPickButton/onPickAxis above (the chevron's own manual-list path,
+    // unchanged) - the label half of each pill was reserved for exactly
+    // this from #48's own original doc comment.
+    listeningKeyName: String?,
+    listeningSlot: BindingSlot?,
+    onStartListenButton: (String) -> Unit,
+    onStartListenAxis: (String) -> Unit,
     modifier: Modifier,
 ) {
     val listState = rememberLazyListState()
@@ -2161,12 +2267,22 @@ private fun ControllerBindingsCard(
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             val buttonToken = buttonValue(row)
                             PillWithChevron(
-                                label = if (buttonToken == "0") "Button: None" else "Button: $buttonToken",
+                                label = when {
+                                    listeningKeyName == row.keyName && (listeningSlot == BindingSlot.PAD0_BUTTON || listeningSlot == BindingSlot.PAD1_BUTTON) -> "Press a button…"
+                                    buttonToken == "0" -> "Button: None"
+                                    else -> "Button: $buttonToken"
+                                },
+                                onLabelClick = { onStartListenButton(row.keyName) },
                                 onChevronClick = { onPickButton(row.keyName) },
                             )
                             val axisToken = axisValue(row)
                             PillWithChevron(
-                                label = if (axisToken == "0") "Axis: None" else "Axis: $axisToken",
+                                label = when {
+                                    listeningKeyName == row.keyName && (listeningSlot == BindingSlot.AXIS_PAD0 || listeningSlot == BindingSlot.AXIS_PAD1) -> "Move a stick…"
+                                    axisToken == "0" -> "Axis: None"
+                                    else -> "Axis: $axisToken"
+                                },
+                                onLabelClick = { onStartListenAxis(row.keyName) },
                                 onChevronClick = { onPickAxis(row.keyName) },
                             )
                         }
@@ -2183,12 +2299,13 @@ private fun ControllerBindingsCard(
 
 /**
  * #48 - a real pill (matching the dark rounded look Android's own
- * ControllerConfigScreen uses), display-only except for its chevron -
- * see ControllerBindingsCard's own comment for why the pill body itself
- * is deliberately not clickable in this stage.
+ * ControllerConfigScreen uses). The chevron opens the manual token list
+ * (unchanged since #48); #80 makes the label itself clickable too, to
+ * start live capture - the label was deliberately inert until now, per
+ * this comment's own original wording.
  */
 @Composable
-private fun PillWithChevron(label: String, onChevronClick: () -> Unit) {
+private fun PillWithChevron(label: String, onLabelClick: (() -> Unit)? = null, onChevronClick: () -> Unit) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -2201,7 +2318,7 @@ private fun PillWithChevron(label: String, onChevronClick: () -> Unit) {
             label,
             color = MaterialTheme.colorScheme.onPrimary,
             style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f).let { if (onLabelClick != null) it.clickable(onClick = onLabelClick) else it },
         )
         IconButton(onClick = onChevronClick, modifier = Modifier.size(28.dp)) {
             Icon(

@@ -3,6 +3,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import org.lwjgl.glfw.GLFW
 import org.lwjgl.glfw.GLFWGamepadState
 import org.lwjgl.system.MemoryStack
+import kotlin.math.abs
 
 /**
  * #69 - the real actions a gamepad drives, matching the exact set the
@@ -17,6 +18,63 @@ import org.lwjgl.system.MemoryStack
  * does with it.
  */
 enum class GamepadAction { LEFT, RIGHT, UP, LAUNCH, OPTIONS, BACK }
+
+// #80 - GLFW's own standardized gamepad button indices, in order
+// (GLFW_GAMEPAD_BUTTON_A=0 .. GLFW_GAMEPAD_BUTTON_DPAD_LEFT=14), mapped
+// to the exact token strings hypseus's keycodes.cpp expects (see
+// GamepadIni.kt's own VALID_BUTTON_TOKENS - case-sensitive, confirmed
+// against Android's real GamepadIni.kt). Covers 15 of VALID_BUTTON_TOKENS'
+// 17 entries; the remaining two (AXIS_TRIGGER_LEFT/RIGHT) aren't GLFW
+// *buttons* at all - see the trigger-axis handling in startGamepadInput.
+private val BUTTON_TOKEN_BY_GLFW_INDEX = listOf(
+    "BUTTON_A", "BUTTON_B", "BUTTON_X", "BUTTON_Y",
+    "BUTTON_LEFTSHOULDER", "BUTTON_RIGHTSHOULDER",
+    "BUTTON_BACK", "BUTTON_START", "BUTTON_GUIDE",
+    "BUTTON_LEFTSTICK", "BUTTON_RIGHTSTICK",
+    "BUTTON_DPAD_UP", "BUTTON_DPAD_RIGHT", "BUTTON_DPAD_DOWN", "BUTTON_DPAD_LEFT",
+)
+
+// #80 - what a live-capture request is listening for: the next real
+// button press (-> a VALID_BUTTON_TOKENS entry) or the next real stick
+// movement past a deliberate-push threshold (-> a VALID_AXIS_TOKENS
+// entry). Two different GLFW input classes (digital buttons vs analog
+// sticks), so a request is scoped to one or the other rather than "any
+// input" - matches which pill (Button vs Axis) the user actually clicked.
+enum class CaptureKind { BUTTON, AXIS }
+
+// #80 - the live-capture counterpart to GamepadInputBus above: a second,
+// independent channel on the same background polling thread, active only
+// while a Controls-screen pill is being listened to (activeCapture set by
+// the UI thread when a pill's label is clicked). Kept fully separate from
+// GamepadInputBus/GamepadAction - capturing a raw token for a *binding*
+// and emitting a semantic navigation *action* are different concerns, and
+// conflating them would mean every captured button press also fires
+// whatever navigation meaning that button happens to have elsewhere.
+object GamepadCaptureBus {
+    // Written on the Compose/AWT thread (when a pill starts/stops
+    // listening), read every frame on the dedicated gamepad-input thread
+    // - @Volatile so the polling thread always sees the latest write
+    // rather than a cached/stale value.
+    @Volatile
+    var activeCapture: CaptureKind? = null
+        private set
+
+    private val _captured = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val captured: SharedFlow<String> = _captured
+
+    fun startCapture(kind: CaptureKind) {
+        activeCapture = kind
+    }
+
+    fun cancelCapture() {
+        activeCapture = null
+    }
+
+    fun emit(token: String) {
+        activeCapture = null
+        _captured.tryEmit(token)
+    }
+}
 
 /**
  * #69 - the bridge between GamepadInput's own dedicated background
@@ -50,6 +108,38 @@ object GamepadInputBus {
  * above, edge-triggered (only on the press transition, matching a single
  * keyboard KeyDown) rather than firing repeatedly while held.
  */
+// #80 - a stick pushed at least this far (GLFW axes range -1f..1f) counts
+// as a deliberate capture input, not drift/noise. Deliberately more
+// generous than a typical dead-zone (which only needs to reject near-
+// zero noise) since this is a one-shot "did the user mean to push this
+// stick" decision, not continuous movement tracking.
+private const val AXIS_CAPTURE_THRESHOLD = 0.6f
+
+// #80 - GLFW's trigger axes run -1f (released) to 1f (fully pressed);
+// 0f is roughly a half-pull, which is already a deliberate, unambiguous
+// "I'm pulling this trigger" gesture for a one-shot capture.
+private const val TRIGGER_CAPTURE_THRESHOLD = 0f
+
+/**
+ * #80 - which of a stick's 4 directions (if any) is being deliberately
+ * pushed past AXIS_CAPTURE_THRESHOLD right now, or null if neither axis
+ * has crossed it. GLFW's Y axis convention (LWJGL's own GLFWGamepadState
+ * docs): negative = up, positive = down - the opposite sign convention
+ * from X's negative = left, positive = right, which is why up/down and
+ * left/right need separate checks rather than one shared sign test.
+ * Whichever axis (X or Y) has moved further wins, so a mostly-diagonal
+ * push still resolves to one clear direction instead of capturing
+ * nothing.
+ */
+private fun captureStickDirection(x: Float, y: Float, tokenPrefix: String): String? {
+    if (abs(y) >= abs(x)) {
+        if (abs(y) < AXIS_CAPTURE_THRESHOLD) return null
+        return if (y < 0) "${tokenPrefix}_UP" else "${tokenPrefix}_DOWN"
+    }
+    if (abs(x) < AXIS_CAPTURE_THRESHOLD) return null
+    return if (x < 0) "${tokenPrefix}_LEFT" else "${tokenPrefix}_RIGHT"
+}
+
 fun startGamepadInput() {
     Thread {
         try {
@@ -73,6 +163,7 @@ fun startGamepadInput() {
                         val state = GLFWGamepadState.malloc(stack)
                         if (!GLFW.glfwGetGamepadState(jid, state)) return@use
                         val buttons = state.buttons()
+                        val axes = state.axes()
 
                         fun edgePress(button: Int): Boolean {
                             val isPressed = buttons.get(button) == GLFW.GLFW_PRESS.toByte()
@@ -81,12 +172,59 @@ fun startGamepadInput() {
                             return fired
                         }
 
-                        if (edgePress(GLFW.GLFW_GAMEPAD_BUTTON_DPAD_LEFT)) GamepadInputBus.emit(GamepadAction.LEFT)
-                        if (edgePress(GLFW.GLFW_GAMEPAD_BUTTON_DPAD_RIGHT)) GamepadInputBus.emit(GamepadAction.RIGHT)
-                        if (edgePress(GLFW.GLFW_GAMEPAD_BUTTON_DPAD_UP)) GamepadInputBus.emit(GamepadAction.UP)
-                        if (edgePress(GLFW.GLFW_GAMEPAD_BUTTON_A)) GamepadInputBus.emit(GamepadAction.LAUNCH)
-                        if (edgePress(GLFW.GLFW_GAMEPAD_BUTTON_DPAD_DOWN)) GamepadInputBus.emit(GamepadAction.OPTIONS)
-                        if (edgePress(GLFW.GLFW_GAMEPAD_BUTTON_B)) GamepadInputBus.emit(GamepadAction.BACK)
+                        // #80 - every button's edge-press is computed
+                        // every frame (not just the 6 navigation actions
+                        // below), both so a live-capture request can see
+                        // a fresh press on *any* button, and so
+                        // wasPressed stays correct for every index
+                        // regardless of whether capture happens to be
+                        // active this particular frame.
+                        val pressedThisFrame = BUTTON_TOKEN_BY_GLFW_INDEX.indices.filter { edgePress(it) }
+
+                        when (GamepadCaptureBus.activeCapture) {
+                            CaptureKind.BUTTON -> {
+                                val button = pressedThisFrame.firstOrNull()
+                                if (button != null) {
+                                    GamepadCaptureBus.emit(BUTTON_TOKEN_BY_GLFW_INDEX[button])
+                                } else if (axes.get(GLFW.GLFW_GAMEPAD_AXIS_LEFT_TRIGGER) > TRIGGER_CAPTURE_THRESHOLD) {
+                                    // Triggers aren't GLFW *buttons* - hypseus
+                                    // still lists them in the button token set
+                                    // (VALID_BUTTON_TOKENS), so a deliberate
+                                    // pull captures here too, checked only
+                                    // once nothing already captured.
+                                    GamepadCaptureBus.emit("AXIS_TRIGGER_LEFT")
+                                } else if (axes.get(GLFW.GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER) > TRIGGER_CAPTURE_THRESHOLD) {
+                                    GamepadCaptureBus.emit("AXIS_TRIGGER_RIGHT")
+                                }
+                            }
+                            CaptureKind.AXIS -> {
+                                val token = captureStickDirection(
+                                    axes.get(GLFW.GLFW_GAMEPAD_AXIS_LEFT_X),
+                                    axes.get(GLFW.GLFW_GAMEPAD_AXIS_LEFT_Y),
+                                    "AXIS_LEFT",
+                                ) ?: captureStickDirection(
+                                    axes.get(GLFW.GLFW_GAMEPAD_AXIS_RIGHT_X),
+                                    axes.get(GLFW.GLFW_GAMEPAD_AXIS_RIGHT_Y),
+                                    "AXIS_RIGHT",
+                                )
+                                if (token != null) GamepadCaptureBus.emit(token)
+                            }
+                            null -> {
+                                // #80 - navigation actions are suppressed
+                                // while a capture is active (the `when`
+                                // above only reaches here when it isn't),
+                                // so a button press meant to be captured
+                                // for a binding never also fires whatever
+                                // navigation meaning that same button has
+                                // elsewhere in the app.
+                                if (pressedThisFrame.contains(GLFW.GLFW_GAMEPAD_BUTTON_DPAD_LEFT)) GamepadInputBus.emit(GamepadAction.LEFT)
+                                if (pressedThisFrame.contains(GLFW.GLFW_GAMEPAD_BUTTON_DPAD_RIGHT)) GamepadInputBus.emit(GamepadAction.RIGHT)
+                                if (pressedThisFrame.contains(GLFW.GLFW_GAMEPAD_BUTTON_DPAD_UP)) GamepadInputBus.emit(GamepadAction.UP)
+                                if (pressedThisFrame.contains(GLFW.GLFW_GAMEPAD_BUTTON_A)) GamepadInputBus.emit(GamepadAction.LAUNCH)
+                                if (pressedThisFrame.contains(GLFW.GLFW_GAMEPAD_BUTTON_DPAD_DOWN)) GamepadInputBus.emit(GamepadAction.OPTIONS)
+                                if (pressedThisFrame.contains(GLFW.GLFW_GAMEPAD_BUTTON_B)) GamepadInputBus.emit(GamepadAction.BACK)
+                            }
+                        }
                     }
                 }
 
