@@ -148,7 +148,7 @@ private fun HypdroidApp(games: List<Game>, installRoot: File, launcherFolder: Fi
             onBack = { screen = Screen.Carousel },
         )
         is Screen.ManageMediaFolder -> BlankPlaceholderScreen("Manage Media Folder", onBack = { screen = Screen.Settings })
-        is Screen.AppSettings -> BlankPlaceholderScreen("App Settings", onBack = { screen = Screen.Settings })
+        is Screen.AppSettings -> AppSettingsScreen(launcherFolder = launcherFolder, onBack = { screen = Screen.Settings })
         is Screen.Controls -> BlankPlaceholderScreen("Controls", onBack = { screen = Screen.Settings })
         is Screen.About -> BlankPlaceholderScreen("About", onBack = { screen = Screen.Settings })
         is Screen.GameOptionsFor -> GameOptionsScreen(
@@ -664,6 +664,178 @@ private fun GameHackScreen(game: Game, launcherFolder: File?, onBack: () -> Unit
                 Column(modifier = Modifier.padding(12.dp).fillMaxWidth()) {}
             }
         }
+    }
+}
+
+/**
+ * #31 - replaces #24's stub with real content, matching the real Android
+ * AppSettingsScreen exactly (confirmed against two live screenshots from
+ * a real device): Global Cover Art + Background Art side by side,
+ * Preserve Video Aspect Ratio below.
+ *
+ * Preserve Video Aspect Ratio's toggle exists and persists here since it
+ * lives on the same real screen, but appending the actual
+ * -preserve_aspect_ratio launch arg (and the real hypseus-singe 3.0.2+
+ * version risk that comes with it) is #32's job, not this story's.
+ */
+@Composable
+private fun AppSettingsScreen(launcherFolder: File?, onBack: () -> Unit) {
+    var settings by remember {
+        mutableStateOf(if (launcherFolder != null) loadAppSettings(launcherFolder) else AppSettings())
+    }
+    var showGlobalCoverArtPicker by remember { mutableStateOf(false) }
+
+    fun persist(updated: AppSettings) {
+        settings = updated
+        if (launcherFolder != null) saveAppSettings(launcherFolder, updated)
+    }
+
+    // Escape matches #19/#20's established convention on every other
+    // screen in this app.
+    val focusRequester = remember { FocusRequester() }
+    var hasRequestedInitialFocus by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+            .focusRequester(focusRequester)
+            .onGloballyPositioned {
+                if (!hasRequestedInitialFocus) {
+                    hasRequestedInitialFocus = true
+                    try {
+                        focusRequester.requestFocus()
+                    } catch (e: IllegalStateException) {
+                        // see #17's identical guard on GameCarousel
+                    }
+                }
+            }
+            .focusable()
+            .onKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
+                    onBack()
+                    true
+                } else {
+                    false
+                }
+            },
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("App Settings", style = MaterialTheme.typography.titleLarge)
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedCard(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Global Cover Art", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                "On: same art for every game. Off: each game picks its own.",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                        Switch(
+                            checked = settings.globalCoverArtEnabled,
+                            onCheckedChange = { persist(settings.copy(globalCoverArtEnabled = it)) },
+                        )
+                    }
+                    if (settings.globalCoverArtEnabled) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                settings.globalCoverArtType.name,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Button(onClick = { showGlobalCoverArtPicker = true }) { Text("Change") }
+                        }
+                    }
+                }
+            }
+
+            OutlinedCard(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Background Art", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                "On: uses art from bg folder. Off: default white.",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                        Switch(
+                            checked = settings.backgroundArtEnabled,
+                            onCheckedChange = { persist(settings.copy(backgroundArtEnabled = it)) },
+                        )
+                    }
+                    // #31 - Default Art is a real second toggle, only shown
+                    // while Background Art itself is on, matching the real
+                    // device exactly - and it's an unconditional override
+                    // (every game gets bg/default.png), not a missing-file
+                    // fallback (see #27's backgroundArtFile doc comment).
+                    if (settings.backgroundArtEnabled) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Default Art", style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    "Uses default.png for all games.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
+                            Switch(
+                                checked = settings.defaultArtEnabled,
+                                onCheckedChange = { persist(settings.copy(defaultArtEnabled = it)) },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedCard(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Preserve Video Aspect Ratio", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                "On: adds black bars if the video doesn't match your screen. Off: fills the screen.",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                        Switch(
+                            checked = settings.preserveAspectRatioEnabled,
+                            onCheckedChange = { persist(settings.copy(preserveAspectRatioEnabled = it)) },
+                        )
+                    }
+                }
+            }
+            // No second card to pair this with yet - an invisible spacer
+            // claims the other half of the row so this card stays the
+            // same size as its siblings above, matching the real Android
+            // layout's own spacer for the same reason.
+            Spacer(modifier = Modifier.weight(1f))
+        }
+    }
+
+    if (showGlobalCoverArtPicker) {
+        CoverArtPickerDialog(
+            onSelect = { type ->
+                persist(settings.copy(globalCoverArtType = type))
+                showGlobalCoverArtPicker = false
+            },
+            onDismiss = { showGlobalCoverArtPicker = false },
+        )
     }
 }
 
