@@ -801,15 +801,22 @@ private fun GameCard(game: Game, coverArtFile: File?, scale: Float, onClick: () 
  * #19 - matches Android's real GameOptionsScreen layout and save model:
  * Cover Art (stub - no media/cover-art system exists on Windows yet, that
  * is phase 3), Game Hacks (navigates to GameHackScreen below), Bezel/
- * Scorebezel Autofit/Overlay Bezel, and Arguments. Every field saves
- * immediately on change, no separate Save button - matching Android's own
- * documented behavior exactly, not a Windows invention.
+ * Overlay Bezel, and Arguments. Every field saves immediately on change,
+ * no separate Save button - matching Android's own documented behavior
+ * exactly, not a Windows invention.
+ *
+ * #87 - Scorebezel Autofit's own row is commented out (not deleted) -
+ * see the comment right above it in this function's own body.
  */
 // #83 - the real, ordered flat-list stops this screen can have.
 // OVERLAY_BEZEL_SWITCH only ever appears in the real list while
 // BEZEL_SWITCH is on, matching the screen's own real conditional layout
 // - same reasoning as AppSettingsControl's own identical comment.
-private enum class GameOptionsControl { COVER_ART_CHANGE, GAME_HACKS, BEZEL_SWITCH, SCOREBEZEL_AUTOFIT_SWITCH, OVERLAY_BEZEL_SWITCH }
+// #87 - SCOREBEZEL_AUTOFIT_SWITCH removed (commented out below, not
+// deleted): the toggle it drove sent -scorebezel_autofit, which turned
+// out not to be a real hypseus argument at all - see GameOptions.kt's
+// own launchArgumentsFor() comment.
+private enum class GameOptionsControl { COVER_ART_CHANGE, GAME_HACKS, BEZEL_SWITCH, /* SCOREBEZEL_AUTOFIT_SWITCH, */ OVERLAY_BEZEL_SWITCH }
 
 @Composable
 private fun GameOptionsScreen(game: Game, launcherFolder: File?, onOpenGameHack: () -> Unit, onBack: () -> Unit) {
@@ -856,7 +863,7 @@ private fun GameOptionsScreen(game: Game, launcherFolder: File?, onOpenGameHack:
             if (!appSettings.globalCoverArtEnabled) add(GameOptionsControl.COVER_ART_CHANGE)
             add(GameOptionsControl.GAME_HACKS)
             add(GameOptionsControl.BEZEL_SWITCH)
-            add(GameOptionsControl.SCOREBEZEL_AUTOFIT_SWITCH)
+            // #87 - add(GameOptionsControl.SCOREBEZEL_AUTOFIT_SWITCH)
             if (options.bezelEnabled) add(GameOptionsControl.OVERLAY_BEZEL_SWITCH)
         }
     }
@@ -878,7 +885,7 @@ private fun GameOptionsScreen(game: Game, launcherFolder: File?, onOpenGameHack:
             GameOptionsControl.COVER_ART_CHANGE -> showCoverArtPicker = true
             GameOptionsControl.GAME_HACKS -> onOpenGameHack()
             GameOptionsControl.BEZEL_SWITCH -> persist(options.copy(bezelEnabled = !options.bezelEnabled))
-            GameOptionsControl.SCOREBEZEL_AUTOFIT_SWITCH -> persist(options.copy(scorebezelAutofit = !options.scorebezelAutofit))
+            // #87 - GameOptionsControl.SCOREBEZEL_AUTOFIT_SWITCH -> persist(options.copy(scorebezelAutofit = !options.scorebezelAutofit))
             GameOptionsControl.OVERLAY_BEZEL_SWITCH -> persist(options.copy(overlayBezel = !options.overlayBezel))
             null -> Unit
         }
@@ -1038,6 +1045,11 @@ private fun GameOptionsScreen(game: Game, launcherFolder: File?, onOpenGameHack:
                         )
                     }
 
+                    /* #87 - -scorebezel_autofit isn't a real hypseus
+                     * argument (see GameOptions.kt's own
+                     * launchArgumentsFor() comment) - commented out, not
+                     * deleted, on the chance a future hypseus-singe
+                     * release adds real support.
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(modifier = Modifier.weight(1f)) {
@@ -1056,6 +1068,7 @@ private fun GameOptionsScreen(game: Game, launcherFolder: File?, onOpenGameHack:
                             ),
                         )
                     }
+                    */
 
                     if (options.bezelEnabled) {
                         Spacer(modifier = Modifier.height(8.dp))
@@ -1275,19 +1288,34 @@ private fun CoverArtPickerDialog(onSelect: (CoverArtType) -> Unit, onDismiss: ()
 }
 
 /**
- * #19 - matches Android's GameHackScreen shape: one real toggle (Aspect
- * Ratio Bezel Fix) plus one genuinely empty placeholder card, exactly
- * mirroring Android's own current state (confirmed live on real hardware,
- * not assumed).
+ * #19 - originally matched Android's GameHackScreen shape: one real
+ * toggle (Aspect Ratio Bezel Fix) plus one genuinely empty placeholder
+ * card, mirroring Android's own current state (confirmed live on real
+ * hardware, not assumed).
+ *
+ * #87 - that one real toggle is commented out (not deleted): the
+ * -aspectbezelfix argument it sent turned out not to exist in hypseus-
+ * singe at all, checked against the real upstream source. Both cards
+ * are genuinely blank placeholders again for now.
  */
+/* #87 - the whole #83 addition below (GameHackControl, its flat-list
+ * nav, and the Aspect Ratio Bezel Fix switch itself) is commented out
+ * as one unit, not deleted: -aspectbezelfix isn't a real hypseus
+ * argument (see GameOptions.kt's own launchArgumentsFor() comment), and
+ * with that switch gone this screen has no other real control left to
+ * navigate - #83's own navigation only existed to reach it. Trivial to
+ * restore together if a future hypseus-singe release adds real support.
+
 // #83 - a flat list of exactly one real control, same model as every
 // other screen this story touches - the second card is a genuine blank
 // placeholder (Android's own current state too), not a focus stop, so
 // there's nothing else for this list to hold yet.
 private enum class GameHackControl { ASPECT_RATIO_BEZEL_FIX_SWITCH }
+*/
 
 @Composable
 private fun GameHackScreen(game: Game, launcherFolder: File?, onBack: () -> Unit) {
+    /* #87 - see this file's own comment just above GameHackControl.
     var options by remember(game) {
         mutableStateOf(if (launcherFolder != null) loadOptions(launcherFolder, game.name) else GameOptions())
     }
@@ -1328,6 +1356,7 @@ private fun GameHackScreen(game: Game, launcherFolder: File?, onBack: () -> Unit
             }
         }
     }
+    */
 
     // Escape matches hypseus's own KEY_QUIT default - same as #19's
     // GameOptionsScreen.
@@ -1351,25 +1380,11 @@ private fun GameHackScreen(game: Game, launcherFolder: File?, onBack: () -> Unit
             }
             .focusable()
             .onKeyEvent { event ->
-                if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
-                when (event.key) {
-                    Key.Escape -> {
-                        onBack()
-                        true
-                    }
-                    Key.Enter, Key.NumPadEnter, Key.CtrlLeft -> {
-                        activateFocused()
-                        true
-                    }
-                    Key.DirectionUp -> {
-                        moveFocusUp()
-                        true
-                    }
-                    Key.DirectionDown -> {
-                        moveFocusDown()
-                        true
-                    }
-                    else -> false
+                if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
+                    onBack()
+                    true
+                } else {
+                    false
                 }
             },
     ) {
@@ -1384,6 +1399,8 @@ private fun GameHackScreen(game: Game, launcherFolder: File?, onBack: () -> Unit
         Spacer(modifier = Modifier.height(24.dp))
 
         Row(modifier = Modifier.fillMaxWidth().padding(top = 24.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            /* #87 - Aspect Ratio Bezel Fix's own card - see this file's
+             * own comment just above GameHackControl.
             OutlinedCard(modifier = Modifier.weight(1f)) {
                 Column(modifier = Modifier.padding(12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1405,10 +1422,19 @@ private fun GameHackScreen(game: Game, launcherFolder: File?, onBack: () -> Unit
                     }
                 }
             }
+            */
 
-            // Blank/TBD, matching Android's own current state exactly -
-            // not a focus stop, see this screen's own GameHackControl
-            // comment.
+            // #87 - "Future Placeholder", not silently empty: this card
+            // held Aspect Ratio Bezel Fix until #87 pulled it (not a
+            // real hypseus argument), and a blank card in this spot
+            // would otherwise look broken rather than deliberate.
+            OutlinedCard(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.padding(12.dp).fillMaxWidth()) {
+                    Text("Future Placeholder", style = MaterialTheme.typography.titleMedium)
+                }
+            }
+
+            // Blank/TBD, matching Android's own current state exactly.
             OutlinedCard(modifier = Modifier.weight(1f)) {
                 Column(modifier = Modifier.padding(12.dp).fillMaxWidth()) {}
             }

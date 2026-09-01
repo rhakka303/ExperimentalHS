@@ -62,15 +62,37 @@ class GameOptionsTest {
     }
 
     @Test
-    fun `preserveAspectRatioEnabled appends -preserve_aspect_ratio after aspectBezelFix and before custom arguments`() {
-        val options = GameOptions(
-            aspectBezelFix = true,
-            arguments = listOf("-fastboot"),
-        )
+    fun `preserveAspectRatioEnabled appends -preserve_aspect_ratio before custom arguments`() {
+        val options = GameOptions(arguments = listOf("-fastboot"))
 
         val args = launchArgumentsFor(launcherFolder, options, "dragons_lair", preserveAspectRatioEnabled = true, gameFullscreenEnabled = false)
 
-        assertEquals(listOf("-aspectbezelfix", "-preserve_aspect_ratio", "-fastboot"), args)
+        assertEquals(listOf("-preserve_aspect_ratio", "-fastboot"), args)
+    }
+
+    // --- launchArgumentsFor / #87 ---
+    // Real, live-found gap: neither -scorebezel_autofit nor
+    // -aspectbezelfix exist in DirtBagXon/hypseus-singe (checked
+    // doc/CmdLine.md and src/io/cmdline.cpp, at the v3.0.2 tag and
+    // current master) - a game with either field set true, old or new,
+    // must never actually emit either argument.
+
+    @Test
+    fun `scorebezelAutofit set true adds no argument`() {
+        val options = GameOptions(scorebezelAutofit = true)
+
+        val args = launchArgumentsFor(launcherFolder, options, "dragons_lair", gameFullscreenEnabled = false)
+
+        assertEquals(emptyList(), args)
+    }
+
+    @Test
+    fun `aspectBezelFix set true adds no argument`() {
+        val options = GameOptions(aspectBezelFix = true)
+
+        val args = launchArgumentsFor(launcherFolder, options, "dragons_lair", gameFullscreenEnabled = false)
+
+        assertEquals(emptyList(), args)
     }
 
     // --- launchArgumentsFor / #46 ---
