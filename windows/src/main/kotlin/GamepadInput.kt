@@ -12,9 +12,11 @@ import org.lwjgl.system.MemoryStack
  * this story) completes the one screen transition already in bounds
  * (LAUNCH/OPTIONS open GameOptionsScreen) - without it, entering that
  * screen via a controller would strand the user needing a mouse/keyboard
- * just to leave it again.
+ * just to leave it again. UP (#72) reaches the Settings gear in the top
+ * bar - the carousel's own CarouselFocus model decides what it actually
+ * does with it.
  */
-enum class GamepadAction { LEFT, RIGHT, LAUNCH, OPTIONS, BACK }
+enum class GamepadAction { LEFT, RIGHT, UP, LAUNCH, OPTIONS, BACK }
 
 /**
  * #69 - the bridge between GamepadInput's own dedicated background
@@ -81,6 +83,7 @@ fun startGamepadInput() {
 
                         if (edgePress(GLFW.GLFW_GAMEPAD_BUTTON_DPAD_LEFT)) GamepadInputBus.emit(GamepadAction.LEFT)
                         if (edgePress(GLFW.GLFW_GAMEPAD_BUTTON_DPAD_RIGHT)) GamepadInputBus.emit(GamepadAction.RIGHT)
+                        if (edgePress(GLFW.GLFW_GAMEPAD_BUTTON_DPAD_UP)) GamepadInputBus.emit(GamepadAction.UP)
                         if (edgePress(GLFW.GLFW_GAMEPAD_BUTTON_A)) GamepadInputBus.emit(GamepadAction.LAUNCH)
                         if (edgePress(GLFW.GLFW_GAMEPAD_BUTTON_DPAD_DOWN)) GamepadInputBus.emit(GamepadAction.OPTIONS)
                         if (edgePress(GLFW.GLFW_GAMEPAD_BUTTON_B)) GamepadInputBus.emit(GamepadAction.BACK)
