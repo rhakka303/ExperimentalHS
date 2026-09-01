@@ -31,6 +31,17 @@ dependencies {
     implementation(compose.materialIconsExtended)
     // #18 - per-game options JSON.
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+
+    // #27 - unit tests for pure logic (art resolution, and anything
+    // similarly pure going forward). Nothing before this story needed
+    // it: prior logic (GameScanner, LaunchArgs, Launcher) touches real
+    // hypseus.exe/real installs and was verified against those directly
+    // instead.
+    testImplementation(kotlin("test-junit5"))
+}
+
+tasks.test {
+    useJUnitPlatform()
 }
 
 compose.desktop {
