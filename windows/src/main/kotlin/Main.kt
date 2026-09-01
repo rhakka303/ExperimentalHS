@@ -1,4 +1,5 @@
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
@@ -17,7 +18,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.pager.PageSize
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
@@ -76,15 +81,17 @@ import kotlinx.coroutines.launch
 private sealed interface Screen {
     data object Carousel : Screen
     data object Settings : Screen
-    // #24 - Controls/About are genuinely blank pages for now, matching
-    // #19's Cover Art stub precedent: present so the Settings screen
-    // matches the shape it will eventually need, not functional yet.
-    // Manage Game Folder and Touch Controls (both real cards on Android's
-    // own Settings screen) are deliberately excluded - no touchscreen on
+    // #24 - About is a genuinely blank page for now, matching #19's Cover
+    // Art stub precedent: present so the Settings screen matches the
+    // shape it will eventually need, not functional yet. Manage Game
+    // Folder and Touch Controls (both real cards on Android's own
+    // Settings screen) are deliberately excluded - no touchscreen on
     // desktop, and #41 ruled out a media folder picker permanently
-    // (fixed, auto-created location, not user-configurable).
+    // (fixed, auto-created location, not user-configurable). Controls
+    // itself got real content in #46 - Keyboard mode for now, Controller
+    // 1/Controller 2/Mouse in #47/#48/#49.
     data object AppSettings : Screen
-    // #43 - real content on day one, not a blank stub like Controls/About:
+    // #43 - real content on day one, not a blank stub like About:
     // Preserve Video Aspect Ratio moved here from AppSettings, plus the
     // new Full Screen toggle.
     data object VideoSettings : Screen
@@ -201,7 +208,7 @@ private fun HypdroidApp(
             windowState = windowState,
             onBack = { screen = Screen.Settings },
         )
-        is Screen.Controls -> BlankPlaceholderScreen("Controls", onBack = { screen = Screen.Settings })
+        is Screen.Controls -> ControlsScreen(installRoot = installRoot, onBack = { screen = Screen.Settings })
         is Screen.About -> BlankPlaceholderScreen("About", onBack = { screen = Screen.Settings })
         is Screen.GameOptionsFor -> GameOptionsScreen(
             game = s.game,
@@ -1158,14 +1165,195 @@ private fun VideoSettingsScreen(launcherFolder: File?, windowState: WindowState,
     }
 }
 
+private val CONTROLLER_TYPE_OPTIONS = listOf("Keyboard", "Controller 1", "Controller 2", "Mouse")
+
+/**
+ * #46 - real content for Keyboard mode: every KEY_* action from the one
+ * real hypinput_gamepad.ini at the install root (Windows has exactly one
+ * - its -homedir/-datadir is always the install root itself, unlike
+ * Android's per-game copy), with a real live-capture rebind. Controller
+ * 1/Controller 2/Mouse are real, selectable modes in the "Controller
+ * Type" picker (the full shape #47/#48/#49 need) but show a plain
+ * placeholder until those stories land - #19's "present but not yet
+ * functional" precedent, applied per-mode here rather than per-screen.
+ *
+ * Escape has two different jobs on this screen depending on state: while
+ * actively listening for a key, it cancels the capture without writing
+ * anything or navigating back; otherwise it's this screen's usual
+ * back-navigation key, same as everywhere else in this app. The two
+ * must never be conflated - confirmed as its own acceptance criterion,
+ * not an incidental detail.
+ */
+@Composable
+private fun ControlsScreen(installRoot: File, onBack: () -> Unit) {
+    val iniFile = remember(installRoot) { gamepadIniPath(installRoot) }
+    var iniText by remember { mutableStateOf(if (iniFile.isFile) iniFile.readText() else null) }
+    val rows = remember(iniText) { iniText?.let { parseGamepadRows(it) } ?: emptyList() }
+
+    var mode by remember { mutableStateOf("Keyboard") }
+    var showModePicker by remember { mutableStateOf(false) }
+    var listeningForKeyName by remember { mutableStateOf<String?>(null) }
+
+    fun captureKey(keyName: String, key: Key) {
+        if (key == Key.Escape) {
+            listeningForKeyName = null
+            return
+        }
+        val token = sdlkTokenFor(key) ?: return // unmapped key: keep listening
+        val current = iniText ?: return
+        val updated = updateGamepadBinding(current, keyName, BindingSlot.KEY1, token)
+        iniFile.writeText(updated)
+        iniText = updated
+        listeningForKeyName = null
+    }
+
+    val focusRequester = remember { FocusRequester() }
+    var hasRequestedInitialFocus by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+            .focusRequester(focusRequester)
+            .onGloballyPositioned {
+                if (!hasRequestedInitialFocus) {
+                    hasRequestedInitialFocus = true
+                    try {
+                        focusRequester.requestFocus()
+                    } catch (e: IllegalStateException) {
+                        // see #17's identical guard on GameCarousel
+                    }
+                }
+            }
+            .focusable()
+            .onKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+                val listening = listeningForKeyName
+                when {
+                    listening != null -> {
+                        captureKey(listening, event.key)
+                        true
+                    }
+                    event.key == Key.Escape -> {
+                        onBack()
+                        true
+                    }
+                    else -> false
+                }
+            },
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Controls", style = MaterialTheme.typography.titleLarge)
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Controller Type", style = MaterialTheme.typography.titleMedium)
+                    Text(mode, style = MaterialTheme.typography.bodyMedium)
+                }
+                Button(onClick = { showModePicker = true }) { Text("Change") }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        OutlinedCard(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp).fillMaxSize()) {
+                Text(mode, style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(8.dp))
+
+                when {
+                    iniText == null -> Text(
+                        "hypinput_gamepad.ini not found.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    // #46 - Keyboard is the only mode with real content
+                    // this story. #47/#48/#49 add the rest.
+                    mode == "Keyboard" -> {
+                        val listState = rememberLazyListState()
+                        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                            LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+                                items(rows, key = { it.keyName }) { row ->
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp, horizontal = 4.dp),
+                                    ) {
+                                        Text(row.keyName, modifier = Modifier.weight(1f))
+                                        val isListening = listeningForKeyName == row.keyName
+                                        val label = if (row.key1 == "0") "Key: None" else "Key: ${row.key1}"
+                                        Button(onClick = { listeningForKeyName = row.keyName }) {
+                                            Text(if (isListening) "Press a key…" else label)
+                                        }
+                                    }
+                                }
+                            }
+                            VerticalScrollbar(
+                                modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
+                                adapter = rememberScrollbarAdapter(listState),
+                            )
+                        }
+                    }
+                    else -> Text(
+                        "Coming soon.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
+        }
+    }
+
+    if (showModePicker) {
+        Dialog(onDismissRequest = { showModePicker = false }) {
+            Surface(shape = RoundedCornerShape(16.dp), tonalElevation = 4.dp) {
+                Column(modifier = Modifier.padding(24.dp)) {
+                    Text("Controller Type", style = MaterialTheme.typography.headlineSmall)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    CONTROLLER_TYPE_OPTIONS.forEach { option ->
+                        Text(
+                            option,
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    mode = option
+                                    showModePicker = false
+                                }
+                                .padding(vertical = 12.dp),
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "Cancel",
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier
+                            .align(Alignment.End)
+                            .clickable { showModePicker = false }
+                            .padding(8.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
 /**
  * #24 - three cards matching the subset of Android's real Settings screen
  * that applies here (Manage Game Folder and Touch Controls excluded - see
- * Screen's own comment for why). Controls/About are genuinely blank
- * destinations for now, same "present but not yet functional" precedent
- * #19 set for Cover Art. No .bat export card here - that's #20's original
- * scope, deferred separately (owner, 2026-08-31: low priority, phase
- * 5+); this pass is purely about the screen's shape.
+ * Screen's own comment for why). About is a genuinely blank destination
+ * for now, same "present but not yet functional" precedent #19 set for
+ * Cover Art. Controls got real content in #46. No .bat export card here -
+ * that's #20's original scope, deferred separately (owner, 2026-08-31:
+ * low priority, phase 5+); this pass is purely about the screen's shape.
  *
  * #41 - originally a 2x2 grid with a fourth "Manage Media Folder" card;
  * removed once the media folder location became fixed and auto-created
