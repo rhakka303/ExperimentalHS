@@ -1280,6 +1280,15 @@ private fun VideoSettingsScreen(launcherFolder: File?, windowState: WindowState,
 // like more complexity than it was worth for 3 fixed rows. #47 closed.
 private val CONTROLLER_TYPE_OPTIONS = listOf("Keyboard", "Controller 1", "Controller 2")
 
+// #63 - one uniform fixed width for every pill in Controls (Keyboard's
+// Key pill, Controller 1/2's Button and Axis pills), not auto-sized to
+// each pill's own text - real screenshot showed a row with a long real
+// token ("Button: BUTTON_RIGHTSHOULDER") visibly wider than a neighboring
+// "Button: None" row, ragged across the grid. Sized to comfortably fit
+// the real longest case: VALID_BUTTON_TOKENS' own longest entries
+// (BUTTON_LEFTSHOULDER/BUTTON_RIGHTSHOULDER) with the "Button: " prefix.
+private val CONTROLS_PILL_WIDTH = 240.dp
+
 // #48 - which row/slot a token picker dialog is currently open for, plus
 // the token list to show (VALID_BUTTON_TOKENS or VALID_AXIS_TOKENS,
 // GamepadIni.kt) and a title. A plain data holder, not a sealed type -
@@ -1602,14 +1611,21 @@ private fun KeyboardBindingsCard(
                 contentPadding = PaddingValues(end = 20.dp),
             ) {
                 items(rows, key = { it.keyName }) { row ->
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp, horizontal = 4.dp),
-                    ) {
-                        Text(row.keyName, modifier = Modifier.weight(1f))
+                    // #63 - label on its own line, pill below it - matches
+                    // ControllerBindingsCard's real row shape exactly,
+                    // rather than the label+pill-pushed-far-right layout
+                    // this used before (the same visual gap problem #46
+                    // itself had to fix once already, on a wide/maximized
+                    // window).
+                    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp, horizontal = 4.dp)) {
+                        Text(row.keyName, style = MaterialTheme.typography.bodyMedium)
+                        Spacer(modifier = Modifier.height(4.dp))
                         val isListening = listeningForKeyName == row.keyName
                         val label = if (row.key1 == "0") "Key: None" else "Key: ${row.key1}"
-                        Button(onClick = { onRowClick(row.keyName) }) {
+                        Button(
+                            onClick = { onRowClick(row.keyName) },
+                            modifier = Modifier.width(CONTROLS_PILL_WIDTH),
+                        ) {
                             Text(if (isListening) "Press a key…" else label)
                         }
                     }
@@ -1690,6 +1706,7 @@ private fun PillWithChevron(label: String, onChevronClick: () -> Unit) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
+            .width(CONTROLS_PILL_WIDTH)
             .clip(RoundedCornerShape(50))
             .background(MaterialTheme.colorScheme.primary)
             .padding(start = 12.dp, top = 4.dp, bottom = 4.dp, end = 4.dp),
@@ -1698,6 +1715,7 @@ private fun PillWithChevron(label: String, onChevronClick: () -> Unit) {
             label,
             color = MaterialTheme.colorScheme.onPrimary,
             style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.weight(1f),
         )
         IconButton(onClick = onChevronClick, modifier = Modifier.size(28.dp)) {
             Icon(
