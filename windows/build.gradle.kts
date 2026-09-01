@@ -21,6 +21,10 @@ repositories {
 dependencies {
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)
+    // #17 scope addition (2026-08-31, visible arrow-button paging) - the
+    // basic ArrowBack/ArrowForward icons aren't pulled in by material3
+    // alone.
+    implementation(compose.materialIconsExtended)
 }
 
 compose.desktop {
