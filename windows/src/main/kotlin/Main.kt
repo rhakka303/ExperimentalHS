@@ -70,6 +70,7 @@ import androidx.compose.ui.window.rememberWindowState
 import java.io.File
 import java.io.IOException
 import kotlin.math.absoluteValue
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private sealed interface Screen {
@@ -1032,10 +1033,33 @@ private fun VideoSettingsScreen(launcherFolder: File?, windowState: WindowState,
     var settings by remember {
         mutableStateOf(if (launcherFolder != null) loadAppSettings(launcherFolder) else AppSettings())
     }
+    val coroutineScope = rememberCoroutineScope()
 
     fun persist(updated: AppSettings) {
         settings = updated
         if (launcherFolder != null) saveAppSettings(launcherFolder, updated)
+    }
+
+    // Real, observed bugs working through this live: going straight from
+    // WindowPlacement.Fullscreen to Maximized left the window stuck
+    // fullscreen. Splitting the transition through Floating first (with a
+    // delay) got further, but landed on minimized instead - AWT's
+    // iconified bit apparently gets set somewhere during the fullscreen
+    // exit and doesn't clear on its own. isMinimized = false is set
+    // explicitly, in the same coroutine, before the final Maximized
+    // assignment, specifically to clear that bit rather than trusting the
+    // Floating step to have already done it.
+    fun setFullscreen(enabled: Boolean) {
+        if (enabled) {
+            windowState.placement = WindowPlacement.Fullscreen
+        } else {
+            coroutineScope.launch {
+                windowState.placement = WindowPlacement.Floating
+                delay(100)
+                windowState.isMinimized = false
+                windowState.placement = WindowPlacement.Maximized
+            }
+        }
     }
 
     val focusRequester = remember { FocusRequester() }
@@ -1124,7 +1148,7 @@ private fun VideoSettingsScreen(launcherFolder: File?, windowState: WindowState,
                             checked = settings.fullscreenEnabled,
                             onCheckedChange = { enabled ->
                                 persist(settings.copy(fullscreenEnabled = enabled))
-                                windowState.placement = if (enabled) WindowPlacement.Fullscreen else WindowPlacement.Maximized
+                                setFullscreen(enabled)
                             },
                         )
                     }
