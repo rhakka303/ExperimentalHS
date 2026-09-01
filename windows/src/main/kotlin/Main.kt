@@ -819,6 +819,18 @@ private fun GameOptionsScreen(game: Game, launcherFolder: File?, onOpenGameHack:
     var newArgument by remember(game) { mutableStateOf("") }
     var showCoverArtPicker by remember(game) { mutableStateOf(false) }
 
+    // #85 - real, live-found gap, confirmed against a real screenshot of
+    // the real Android app: a per-game Cover Art override has zero
+    // effect while Global Cover Art is on (GameCardArt.kt's own
+    // effectiveCoverArtFile() never even reads it in that case - the
+    // real Android precedence this was already confirmed against). The
+    // real app greys out its own Change button and explains why
+    // ("Controlled by Settings > Global Cover Art") rather than leaving
+    // it reachable-but-pointless.
+    val appSettings = remember(launcherFolder) {
+        if (launcherFolder != null) loadAppSettings(launcherFolder) else AppSettings()
+    }
+
     fun persist(updated: GameOptions) {
         options = updated
         if (launcherFolder != null) saveOptions(launcherFolder, game.name, updated)
@@ -833,9 +845,15 @@ private fun GameOptionsScreen(game: Game, launcherFolder: File?, onOpenGameHack:
     // controller can't type into that field regardless of whether it's
     // reachable, so making the rest of the card focusable would be
     // reachable-but-useless.
-    val controls = remember(options.bezelEnabled) {
+    //
+    // #85 - COVER_ART_CHANGE only enters the list while Global Cover Art
+    // is actually off, same "conditionally-visible control enters/leaves
+    // the list exactly when it's actually usable" rule #76 already
+    // established for AppSettingsScreen's own Change button - not just
+    // visually disabled, genuinely unreachable via Up/Down either.
+    val controls = remember(options.bezelEnabled, appSettings.globalCoverArtEnabled) {
         buildList {
-            add(GameOptionsControl.COVER_ART_CHANGE)
+            if (!appSettings.globalCoverArtEnabled) add(GameOptionsControl.COVER_ART_CHANGE)
             add(GameOptionsControl.GAME_HACKS)
             add(GameOptionsControl.BEZEL_SWITCH)
             add(GameOptionsControl.SCOREBEZEL_AUTOFIT_SWITCH)
@@ -953,6 +971,13 @@ private fun GameOptionsScreen(game: Game, launcherFolder: File?, onOpenGameHack:
                             Text("Cover Art", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                             Button(
                                 onClick = { showCoverArtPicker = true },
+                                // #85 - disabled while Global Cover Art is
+                                // on: a per-game override has zero effect
+                                // then (GameCardArt.kt's own
+                                // effectiveCoverArtFile() never reads it),
+                                // matching the real app rather than
+                                // leaving this reachable-but-pointless.
+                                enabled = !appSettings.globalCoverArtEnabled,
                                 interactionSource = rememberFocusInteractionSource(
                                     isFocused = focusedControl == GameOptionsControl.COVER_ART_CHANGE,
                                     onRealHover = { focusIndex = controls.indexOf(GameOptionsControl.COVER_ART_CHANGE) },
@@ -960,7 +985,23 @@ private fun GameOptionsScreen(game: Game, launcherFolder: File?, onOpenGameHack:
                             ) { Text("Change") }
                         }
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text((options.coverArtOverride ?: CoverArtType.BOX).name, style = MaterialTheme.typography.bodyMedium)
+                        // #85 - the actually-effective type while Global
+                        // Cover Art is on is the global type, not this
+                        // game's own (ignored) override - showing the
+                        // per-game value here would be misleading about
+                        // what actually renders on the carousel.
+                        val effectiveType = if (appSettings.globalCoverArtEnabled) {
+                            appSettings.globalCoverArtType
+                        } else {
+                            options.coverArtOverride ?: CoverArtType.BOX
+                        }
+                        Text(effectiveType.name, style = MaterialTheme.typography.bodyMedium)
+                        if (appSettings.globalCoverArtEnabled) {
+                            Text(
+                                "Controlled by Settings > Global Cover Art",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
                     }
                 }
 
