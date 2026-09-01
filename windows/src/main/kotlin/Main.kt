@@ -367,7 +367,13 @@ private fun GameCard(game: Game, coverArtFile: File?, scale: Float, onClick: () 
             Image(
                 bitmap = coverArtBitmap,
                 contentDescription = game.name,
-                contentScale = ContentScale.Crop,
+                // Fit, not Crop - real box/CD art PNGs include a
+                // transparent shadow margin around the rendered art, and
+                // Crop cuts into the top/bottom to fill the card's fixed
+                // aspect ratio. Android hit and fixed this exact issue
+                // (its own GameCard comment documents it); confirmed the
+                // same problem live here with real CD art before fixing.
+                contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
