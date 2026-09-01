@@ -514,7 +514,14 @@ private fun GameCard(game: Game, coverArtFile: File?, scale: Float, onClick: () 
                 scaleY = scale
             }
             .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
+            // #54 - no background fill: with #29's real background art
+            // live behind the carousel, an opaque surfaceVariant fill
+            // blocked it out behind every card instead of letting it
+            // show through. Android already hit and fixed this exact
+            // problem (its own GameCard's real comment: "transparent
+            // instead of surfaceVariant, so any remaining letterbox gap
+            // blends into the background art... instead of showing a
+            // gray box") - same fix here.
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
