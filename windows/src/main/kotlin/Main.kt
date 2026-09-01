@@ -208,7 +208,11 @@ private fun HypdroidApp(
             windowState = windowState,
             onBack = { screen = Screen.Settings },
         )
-        is Screen.Controls -> ControlsScreen(installRoot = installRoot, onBack = { screen = Screen.Settings })
+        is Screen.Controls -> ControlsScreen(
+            installRoot = installRoot,
+            launcherFolder = launcherFolder,
+            onBack = { screen = Screen.Settings },
+        )
         is Screen.About -> BlankPlaceholderScreen("About", onBack = { screen = Screen.Settings })
         is Screen.GameOptionsFor -> GameOptionsScreen(
             game = s.game,
@@ -284,11 +288,18 @@ private fun GameCarousel(
         snapshotFlow { pagerState.currentPage }.collect { onPageChanged(it) }
     }
 
-    // #32 - preserveAspectRatioEnabled is app-level (#31), not per-game;
-    // launchArgumentsFor slots it into the right position in the argv.
+    // #32/#46 - preserveAspectRatioEnabled/gamepadEnabled are app-level
+    // (#31), not per-game; launchArgumentsFor slots them into the right
+    // position in the argv.
     fun extraArgsFor(game: Game): List<String> =
         launcherFolder?.let {
-            launchArgumentsFor(installRoot, loadOptions(it, game.name), game.name, appSettings.preserveAspectRatioEnabled)
+            launchArgumentsFor(
+                installRoot,
+                loadOptions(it, game.name),
+                game.name,
+                appSettings.preserveAspectRatioEnabled,
+                appSettings.gamepadEnabled,
+            )
         } ?: emptyList()
 
     fun pageLeft() {
@@ -1185,7 +1196,7 @@ private val CONTROLLER_TYPE_OPTIONS = listOf("Keyboard", "Controller 1", "Contro
  * not an incidental detail.
  */
 @Composable
-private fun ControlsScreen(installRoot: File, onBack: () -> Unit) {
+private fun ControlsScreen(installRoot: File, launcherFolder: File?, onBack: () -> Unit) {
     val iniFile = remember(installRoot) { gamepadIniPath(installRoot) }
     var iniText by remember { mutableStateOf(if (iniFile.isFile) iniFile.readText() else null) }
     val rows = remember(iniText) { iniText?.let { parseGamepadRows(it) } ?: emptyList() }
@@ -1193,6 +1204,17 @@ private fun ControlsScreen(installRoot: File, onBack: () -> Unit) {
     var mode by remember { mutableStateOf("Keyboard") }
     var showModePicker by remember { mutableStateOf(false) }
     var listeningForKeyName by remember { mutableStateOf<String?>(null) }
+
+    // #46 - gamepadEnabled is app-level (AppSettings, #31's storage),
+    // same as every other flag-style toggle already on this screen's
+    // sibling screens (App Settings, Video Settings).
+    var appSettings by remember {
+        mutableStateOf(if (launcherFolder != null) loadAppSettings(launcherFolder) else AppSettings())
+    }
+    fun persistAppSettings(updated: AppSettings) {
+        appSettings = updated
+        if (launcherFolder != null) saveAppSettings(launcherFolder, updated)
+    }
 
     fun captureKey(keyName: String, key: Key) {
         if (key == Key.Escape) {
@@ -1265,11 +1287,28 @@ private fun ControlsScreen(installRoot: File, onBack: () -> Unit) {
                     Button(onClick = { showModePicker = true }) { Text("Change") }
                 }
             }
-            // No card to pair Controller Type with - blank space stays
-            // empty rather than stretched, matching the same convention
-            // Settings' own About card uses when there's nothing to pair
-            // it with.
-            Spacer(modifier = Modifier.weight(1f))
+            // #46 - Gamepad: a real launch-arg flag (-gamepad, confirmed
+            // in doc/CmdLine.md/cmdline.cpp), same plain-flag category as
+            // Preserve Video Aspect Ratio (#32) - app-level (AppSettings),
+            // not per-game.
+            OutlinedCard(modifier = Modifier.weight(1f)) {
+                Row(
+                    modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Gamepad", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "On: using a Gamepad. Off: keyboard.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    Switch(
+                        checked = appSettings.gamepadEnabled,
+                        onCheckedChange = { persistAppSettings(appSettings.copy(gamepadEnabled = it)) },
+                    )
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))

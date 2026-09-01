@@ -67,4 +67,28 @@ class GameOptionsTest {
 
         assertEquals(listOf("-aspectbezelfix", "-preserve_aspect_ratio", "-fastboot"), args)
     }
+
+    // --- launchArgumentsFor / #46 ---
+
+    @Test
+    fun `gamepadEnabled defaults to off and adds no argument`() {
+        val args = launchArgumentsFor(launcherFolder, GameOptions(), "dragons_lair")
+
+        assertEquals(emptyList(), args)
+    }
+
+    @Test
+    fun `gamepadEnabled appends -gamepad after -preserve_aspect_ratio and before custom arguments`() {
+        val options = GameOptions(arguments = listOf("-fastboot"))
+
+        val args = launchArgumentsFor(
+            launcherFolder,
+            options,
+            "dragons_lair",
+            preserveAspectRatioEnabled = true,
+            gamepadEnabled = true,
+        )
+
+        assertEquals(listOf("-preserve_aspect_ratio", "-gamepad", "-fastboot"), args)
+    }
 }

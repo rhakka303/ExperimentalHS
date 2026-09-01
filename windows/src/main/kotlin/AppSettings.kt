@@ -23,6 +23,11 @@ import kotlinx.serialization.json.Json
  * hypseus launch arg - a different category from every other field here.
  * Default false (windowed, and specifically WindowPlacement.Maximized -
  * see main()'s own comment for why that fix belongs there, not here).
+ *
+ * gamepadEnabled (#46): back to a plain launch-arg flag, same category
+ * as preserveAspectRatioEnabled - appends -gamepad (confirmed real,
+ * doc/CmdLine.md/cmdline.cpp). Lives on the Controls screen, not App
+ * Settings, since it's control-input related rather than presentation.
  */
 @Serializable
 data class AppSettings(
@@ -32,6 +37,7 @@ data class AppSettings(
     val defaultArtEnabled: Boolean = false,
     val preserveAspectRatioEnabled: Boolean = false,
     val fullscreenEnabled: Boolean = false,
+    val gamepadEnabled: Boolean = false,
 )
 
 private val json = Json { ignoreUnknownKeys = true }
