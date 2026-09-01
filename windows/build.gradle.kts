@@ -22,6 +22,14 @@ repositories {
     mavenCentral()
 }
 
+// #68 - LWJGL/GLFW, the real library candidate for gamepad input:
+// Compose Desktop/AWT has no native gamepad API at all. Windows-only
+// natives classifier since that's this project's only real target -
+// no macOS/Linux natives pulled in. BOM keeps every LWJGL module on one
+// consistent version without repeating it per artifact.
+val lwjglVersion = "3.3.3"
+val lwjglNatives = "natives-windows"
+
 dependencies {
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)
@@ -31,6 +39,16 @@ dependencies {
     implementation(compose.materialIconsExtended)
     // #18 - per-game options JSON.
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+
+    // #68 - core LWJGL + the GLFW module specifically (real joystick/
+    // gamepad polling lives there), plus the actual native .dll each
+    // needs at runtime - the jar alone is just JNI bindings with nothing
+    // to bind to.
+    implementation(platform("org.lwjgl:lwjgl-bom:$lwjglVersion"))
+    implementation("org.lwjgl:lwjgl")
+    implementation("org.lwjgl:lwjgl-glfw")
+    runtimeOnly("org.lwjgl", "lwjgl", classifier = lwjglNatives)
+    runtimeOnly("org.lwjgl", "lwjgl-glfw", classifier = lwjglNatives)
 
     // #27 - unit tests for pure logic (art resolution, and anything
     // similarly pure going forward). Nothing before this story needed
@@ -56,6 +74,14 @@ compose.desktop {
             targetFormats(TargetFormat.Exe)
             packageName = "HypdroidDesktop"
             packageVersion = "1.0.0"
+
+            // #68 - createDistributable builds a trimmed custom JVM via
+            // jlink, containing only the modules it auto-detects as
+            // needed. LWJGL's native memory layer needs sun.misc.Unsafe
+            // (jdk.unsupported) - confirmed as a real NoClassDefFoundError
+            // on the first real prototype run, since nothing else in this
+            // app uses that module for jlink to have detected it.
+            modules("jdk.unsupported")
         }
     }
 }

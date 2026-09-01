@@ -122,6 +122,10 @@ private sealed interface Screen {
  */
 fun main() = application {
     val launcherFolder = remember { resolveLauncherFolder() }
+    // #68 - real prototype only, confirming LWJGL/GLFW's own background
+    // thread coexists cleanly with everything below. remember(Unit) so
+    // this only ever starts once, not on every recomposition.
+    remember(Unit) { startGamepadPrototype(launcherFolder) }
     val initialFullscreenEnabled = remember(launcherFolder) {
         launcherFolder?.let { loadAppSettings(it).fullscreenEnabled } ?: false
     }
