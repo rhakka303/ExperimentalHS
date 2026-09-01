@@ -1252,17 +1252,24 @@ private fun ControlsScreen(installRoot: File, onBack: () -> Unit) {
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        OutlinedCard(modifier = Modifier.fillMaxWidth()) {
-            Row(
-                modifier = Modifier.padding(16.dp).fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Controller Type", style = MaterialTheme.typography.titleMedium)
-                    Text(mode, style = MaterialTheme.typography.bodyMedium)
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            OutlinedCard(modifier = Modifier.weight(1f)) {
+                Row(
+                    modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Controller Type", style = MaterialTheme.typography.titleMedium)
+                        Text(mode, style = MaterialTheme.typography.bodyMedium)
+                    }
+                    Button(onClick = { showModePicker = true }) { Text("Change") }
                 }
-                Button(onClick = { showModePicker = true }) { Text("Change") }
             }
+            // No card to pair Controller Type with - blank space stays
+            // empty rather than stretched, matching the same convention
+            // Settings' own About card uses when there's nothing to pair
+            // it with.
+            Spacer(modifier = Modifier.weight(1f))
         }
 
         Spacer(modifier = Modifier.height(16.dp))
