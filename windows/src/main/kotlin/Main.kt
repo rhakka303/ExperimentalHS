@@ -1176,7 +1176,13 @@ private fun VideoSettingsScreen(launcherFolder: File?, windowState: WindowState,
     }
 }
 
-private val CONTROLLER_TYPE_OPTIONS = listOf("Keyboard", "Controller 1", "Controller 2", "Mouse")
+// Mouse removed, owner's decision 2026-09-01: MOUSE_BUTTON1/2/3's real
+// shape (a fixed physical button mapped to a KEY_* action) doesn't fit
+// either interaction model already built - not a live-capture target
+// like Keyboard (there's nothing to "wait for a press" on; the button is
+// already fixed by which row you're on), and a plain list-picker felt
+// like more complexity than it was worth for 3 fixed rows. #47 closed.
+private val CONTROLLER_TYPE_OPTIONS = listOf("Keyboard", "Controller 1", "Controller 2")
 
 /**
  * #46 - real content for Keyboard mode: every KEY_* action from the one
