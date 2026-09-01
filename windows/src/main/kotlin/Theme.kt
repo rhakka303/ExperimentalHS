@@ -30,3 +30,9 @@ val HypdroidColorScheme = lightColorScheme(
     primaryContainer = HypdroidNavy,
     onPrimaryContainer = Color.White,
 )
+
+// #72 - same real green Android's own Theme.kt uses for its D-pad focus
+// ring (HypdroidGreenAccent, #92 there) - reused verbatim now that this
+// project has real gamepad/keyboard focus navigation of its own (#69/#72)
+// to actually indicate, rather than inventing a new color for it.
+val HypdroidGreenAccent = Color(0xFF4CAF50)

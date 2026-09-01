@@ -1,6 +1,7 @@
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
@@ -248,6 +249,12 @@ private fun HypdroidApp(
     }
 }
 
+// #72 - which real element on the carousel screen currently has input
+// focus. GEAR deliberately never includes the X (quit) icon - Up must
+// never be able to land focus there, so there's nothing to accidentally
+// confirm into quitting the app.
+private enum class CarouselFocus { CARDS, GEAR }
+
 // see GameCard's identical @Suppress comment - #29's background image
 // reads the same runtime media/ files, not compile-time app resources.
 @Suppress("DEPRECATION")
@@ -345,6 +352,15 @@ private fun GameCarousel(
     // carousel's onKeyEvent/onClick simply never fire during that time.
     var isGameRunning by remember { mutableStateOf(false) }
 
+    // #72 - real focus model: input either targets the game cards or the
+    // top bar's Settings gear, never both at once. Deliberately excludes
+    // the X (quit) icon entirely - Up must never land focus there, so
+    // there's nothing to accidentally confirm into quitting. Shared by
+    // both keyboard and gamepad below, matching #69's own "second input
+    // source for the same actions" framing rather than duplicating this
+    // logic per input path.
+    var carouselFocus by remember { mutableStateOf(CarouselFocus.CARDS) }
+
     fun launchAndTrack(game: Game) {
         val result = launchGame(game, installRoot, extraArgsFor(game))
         if (result is LaunchResult.Started) {
@@ -364,23 +380,49 @@ private fun GameCarousel(
         launchAndTrack(games[pagerState.currentPage])
     }
 
+    fun moveFocusUp() {
+        if (carouselFocus == CarouselFocus.CARDS) carouselFocus = CarouselFocus.GEAR
+    }
+
+    // #72 - context-dependent, matching what Down already meant before
+    // this story existed (open the centered card's options) while adding
+    // the new meaning only the gear-focused state needs (return focus to
+    // the cards) - not two different keys for what's conceptually one
+    // "down" action.
+    fun handleDown() {
+        when (carouselFocus) {
+            CarouselFocus.CARDS -> onOpenOptions(games[pagerState.currentPage])
+            CarouselFocus.GEAR -> carouselFocus = CarouselFocus.CARDS
+        }
+    }
+
+    fun confirmFocused() {
+        when (carouselFocus) {
+            CarouselFocus.CARDS -> launchCentered()
+            CarouselFocus.GEAR -> onOpenSettings()
+        }
+    }
+
     // #69 - a second real input source feeding the exact same actions
     // the carousel's own keyboard onKeyEvent already handles below - not
     // a new interaction model. Only collects while GameCarousel is
     // actually composed (this LaunchedEffect's own lifecycle), which is
     // what scopes gamepad navigation to "only while the carousel is
-    // showing" for free. BACK is deliberately not handled here - nothing
-    // to back out of from the home screen, matching Escape's own
-    // established behavior on this same screen.
+    // showing" for free.
     LaunchedEffect(Unit) {
         GamepadInputBus.events.collect { action ->
             if (isGameRunning) return@collect
             when (action) {
-                GamepadAction.LEFT -> pageLeft()
-                GamepadAction.RIGHT -> pageRight()
-                GamepadAction.LAUNCH -> launchCentered()
-                GamepadAction.OPTIONS -> onOpenOptions(games[pagerState.currentPage])
-                GamepadAction.BACK -> Unit
+                GamepadAction.UP -> moveFocusUp()
+                GamepadAction.LEFT -> if (carouselFocus == CarouselFocus.CARDS) pageLeft()
+                GamepadAction.RIGHT -> if (carouselFocus == CarouselFocus.CARDS) pageRight()
+                GamepadAction.LAUNCH -> confirmFocused()
+                GamepadAction.OPTIONS -> handleDown()
+                // #72 - B also returns focus to the cards from the gear,
+                // alongside its existing meaning elsewhere (back out of
+                // GameOptionsScreen) - a natural "back" here too, not a
+                // new binding.
+                GamepadAction.BACK -> if (carouselFocus == CarouselFocus.GEAR) carouselFocus = CarouselFocus.CARDS
             }
         }
     }
@@ -466,7 +508,19 @@ private fun GameCarousel(
                         Icon(Icons.Filled.Close, contentDescription = "Quit", tint = iconTint)
                     }
                 }
-                IconButton(onClick = onOpenSettings) {
+                // #72 - real visible focus indicator, same green
+                // Android's own Theme.kt already established for exactly
+                // this purpose (D-pad focus ring) - reused rather than
+                // inventing a new color, now that this project has real
+                // keyboard/gamepad focus navigation of its own to show.
+                IconButton(
+                    onClick = onOpenSettings,
+                    modifier = if (carouselFocus == CarouselFocus.GEAR) {
+                        Modifier.border(3.dp, HypdroidGreenAccent, CircleShape)
+                    } else {
+                        Modifier
+                    },
+                ) {
                     Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = iconTint)
                 }
             }
@@ -517,22 +571,35 @@ private fun GameCarousel(
                                 // reference in the vendored source - the
                                 // ecosystem's standard confirm key.
                                 Key.Enter, Key.NumPadEnter, Key.CtrlLeft -> {
-                                    launchCentered()
+                                    confirmFocused()
                                     true
                                 }
-                                // #19 - Down opens the centered card's
-                                // options screen, alongside clicking its
-                                // gear icon.
+                                // #19/#72 - Down opens the centered card's
+                                // options screen (alongside clicking its
+                                // gear icon) while the cards have focus,
+                                // or returns focus to the cards from the
+                                // Settings gear - context-dependent,
+                                // matching what Down already meant before
+                                // #72 added the second meaning.
                                 Key.DirectionDown -> {
-                                    onOpenOptions(games[pagerState.currentPage])
+                                    handleDown()
+                                    true
+                                }
+                                // #72 - reaches the Settings gear in the
+                                // top bar; never the X (quit) icon even
+                                // when it's also showing, so there's
+                                // nothing to accidentally confirm into
+                                // quitting.
+                                Key.DirectionUp -> {
+                                    moveFocusUp()
                                     true
                                 }
                                 Key.DirectionLeft -> {
-                                    pageLeft()
+                                    if (carouselFocus == CarouselFocus.CARDS) pageLeft()
                                     true
                                 }
                                 Key.DirectionRight -> {
-                                    pageRight()
+                                    if (carouselFocus == CarouselFocus.CARDS) pageRight()
                                     true
                                 }
                                 // #43 - carousel/home screen only: every
