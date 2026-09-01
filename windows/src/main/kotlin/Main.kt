@@ -136,7 +136,7 @@ fun main() = application {
     )
 
     Window(onCloseRequest = ::exitApplication, title = "HypdroidDesktop", state = windowState) {
-        MaterialTheme {
+        MaterialTheme(colorScheme = HypdroidColorScheme) {
             Surface(modifier = Modifier.fillMaxSize()) {
                 val installRoot = remember { resolveInstallRoot() }
 
@@ -741,7 +741,7 @@ private fun GameOptionsScreen(game: Game, launcherFolder: File?, onOpenGameHack:
                 OutlinedCard(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenGameHack)) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Text("Game Hacks", style = MaterialTheme.typography.titleMedium)
-                        Text("Custom Game fixes", style = MaterialTheme.typography.bodySmall)
+                        Text("Custom game fixes", style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
@@ -1428,7 +1428,7 @@ private fun ControlsScreen(
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Gamepad", style = MaterialTheme.typography.titleMedium)
                         Text(
-                            "On: using a Gamepad. Off: keyboard.",
+                            "On: using a gamepad. Off: keyboard.",
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
@@ -1817,7 +1817,7 @@ private fun SettingsScreen(
         Spacer(modifier = Modifier.height(24.dp))
 
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            SettingsCard("App Settings", "Global Cover Art override", Modifier.weight(1f), onOpenAppSettings)
+            SettingsCard("App Settings", "Global media override", Modifier.weight(1f), onOpenAppSettings)
             SettingsCard("Controls", "Assign gamepad buttons per action", Modifier.weight(1f), onOpenControls)
         }
         Spacer(modifier = Modifier.height(12.dp))
