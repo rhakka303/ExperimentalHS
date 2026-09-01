@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
@@ -57,6 +58,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -326,24 +328,30 @@ private fun GameCarousel(
         launchGame(game, installRoot, extraArgsFor(game))
     }
 
-    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val cardWidth = maxWidth * 0.32f
-
-        // #29 - full-screen background behind the cards. Crop, not Fit -
-        // unlike box/CD art (#28), background images are meant to fully
-        // cover the screen with no preserved-margin concern, matching
-        // Android's own real background rendering exactly. Falls back to
-        // the existing plain background (nothing rendered here) when
-        // resolution returns null, for any of the reasons #27 documents.
-        val backgroundBitmap = remember(backgroundFile) {
-            backgroundFile?.let { file ->
-                try {
-                    file.inputStream().buffered().use(::loadImageBitmap)
-                } catch (e: IOException) {
-                    null
-                }
+    // #29 - full-screen background, the bottom-most layer. Crop, not Fit -
+    // unlike box/CD art (#28), background images are meant to fully cover
+    // the screen with no preserved-margin concern, matching Android's own
+    // real background rendering exactly. Falls back to the existing plain
+    // background (nothing rendered here) when resolution returns null,
+    // for any of the reasons #27 documents.
+    val backgroundBitmap = remember(backgroundFile) {
+        backgroundFile?.let { file ->
+            try {
+                file.inputStream().buffered().use(::loadImageBitmap)
+            } catch (e: IOException) {
+                null
             }
         }
+    }
+
+    // #57 - real Hypdroid logo, the actual Android asset
+    // (android/app/src/main/res/drawable/hypdroid_logo.png), copied in as
+    // a plain classpath resource rather than wiring up Compose's full
+    // resources system for one static image - see this story's own issue
+    // for the tradeoff. Loaded once, not per-recomposition.
+    val logoBitmap = remember { loadHypdroidLogo() }
+
+    Box(modifier = Modifier.fillMaxSize()) {
         if (backgroundBitmap != null) {
             Image(
                 bitmap = backgroundBitmap,
@@ -353,149 +361,194 @@ private fun GameCarousel(
             )
         }
 
-        HorizontalPager(
-            state = pagerState,
-            pageSize = PageSize.Fixed(cardWidth),
-            contentPadding = PaddingValues(horizontal = (maxWidth - cardWidth) / 2),
-            pageSpacing = 16.dp,
-            modifier = Modifier
-                .fillMaxSize()
-                .focusRequester(focusRequester)
-                // A bare LaunchedEffect(Unit) calling requestFocus() raced
-                // this modifier's own attachment on desktop and threw
-                // "FocusRequester is not initialized" - a real timing
-                // difference from Android's equivalent code, not something
-                // to guess a retry-count for. onGloballyPositioned fires on
-                // every layout pass (window resizes included), not once, so
-                // it's guarded to request focus only the first time. Even
-                // guarded to fire after layout, requestFocus() still threw
-                // here in practice (confirmed twice on real hardware) - so
-                // this is wrapped rather than trusted further. Worst case
-                // if it still fails: auto-focus-on-launch doesn't happen,
-                // and the pager gets focus on the first click instead.
-                .onGloballyPositioned {
-                    if (!hasRequestedInitialFocus) {
-                        hasRequestedInitialFocus = true
-                        try {
-                            focusRequester.requestFocus()
-                        } catch (e: IllegalStateException) {
-                            // see comment above
-                        }
+        // #57/#65 - the top bar (logo + icons) is a real layout region
+        // here, not an overlay floating on top of the carousel's own Box -
+        // matches Android's real dashboard redesign exactly. The two
+        // occupy separate, non-overlapping regions of this Column, which
+        // is what avoids the touch/input-priority conflict Android's own
+        // #49 fix (referenced in its #65 comment) had to work around back
+        // when its icon row still overlaid the carousel directly - and
+        // sets up cleaner input routing for phase 4's future gamepad
+        // navigation, per the owner's own reasoning scoping this out.
+        Column(modifier = Modifier.fillMaxSize()) {
+            // #57/#66 - a real conditional scrim behind the whole row, not
+            // per-icon circles (#19/#43's earlier approach here) - matches
+            // Android's actual behavior: semi-transparent dark background
+            // only while real background art is showing underneath, so
+            // the logo/icons stay legible regardless of the art's own
+            // tone/brightness. No scrim against the plain background -
+            // already legible on its own.
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(
+                        if (backgroundBitmap != null) {
+                            Modifier.background(Color.Black.copy(alpha = 0.5f))
+                        } else {
+                            Modifier
+                        },
+                    )
+                    .padding(8.dp),
+            ) {
+                if (logoBitmap != null) {
+                    Image(
+                        bitmap = logoBitmap,
+                        contentDescription = "Hypdroid",
+                        modifier = Modifier.height(40.dp),
+                    )
+                }
+                Spacer(modifier = Modifier.weight(1f))
+                // White against the scrim always contrasts, since the
+                // scrim itself is always dark - matches Android's own
+                // real reasoning here exactly. Default theme color the
+                // rest of the time, against the plain background.
+                val iconTint = if (backgroundBitmap != null) Color.White else LocalContentColor.current
+                if (appSettings.fullscreenEnabled) {
+                    IconButton(onClick = onQuit) {
+                        Icon(Icons.Filled.Close, contentDescription = "Quit", tint = iconTint)
                     }
                 }
-                .focusable()
-                .onKeyEvent { event ->
-                    if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
-                    when (event.key) {
-                        // Ctrl matches hypseus's own KEY_BUTTON1 default
-                        // (SDLK_LCTRL, the confirm/action button) in both
-                        // hypinput_gamepad.ini in this install and the
-                        // plain hypinput.ini reference in the vendored
-                        // source - the ecosystem's standard confirm key.
-                        Key.Enter, Key.NumPadEnter, Key.CtrlLeft -> {
-                            launchCentered()
-                            true
-                        }
-                        // #19 - Down opens the centered card's options
-                        // screen, alongside clicking its gear icon.
-                        Key.DirectionDown -> {
-                            onOpenOptions(games[pagerState.currentPage])
-                            true
-                        }
-                        Key.DirectionLeft -> {
-                            pageLeft()
-                            true
-                        }
-                        Key.DirectionRight -> {
-                            pageRight()
-                            true
-                        }
-                        // #43 - carousel/home screen only: every other
-                        // screen keeps its own existing Escape-to-back
-                        // behavior untouched. Only quits while Full Screen
-                        // is on - off means windowed mode, where Escape on
-                        // the carousel does nothing (there's no back
-                        // destination from the home screen), matching the
-                        // owner's own description exactly.
-                        Key.Escape -> {
-                            if (appSettings.fullscreenEnabled) {
-                                onQuit()
-                                true
-                            } else {
-                                false
+                IconButton(onClick = onOpenSettings) {
+                    Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = iconTint)
+                }
+            }
+
+            BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                val cardWidth = maxWidth * 0.32f
+
+                HorizontalPager(
+                    state = pagerState,
+                    pageSize = PageSize.Fixed(cardWidth),
+                    contentPadding = PaddingValues(horizontal = (maxWidth - cardWidth) / 2),
+                    pageSpacing = 16.dp,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .focusRequester(focusRequester)
+                        // A bare LaunchedEffect(Unit) calling requestFocus()
+                        // raced this modifier's own attachment on desktop
+                        // and threw "FocusRequester is not initialized" - a
+                        // real timing difference from Android's equivalent
+                        // code, not something to guess a retry-count for.
+                        // onGloballyPositioned fires on every layout pass
+                        // (window resizes included), not once, so it's
+                        // guarded to request focus only the first time.
+                        // Even guarded to fire after layout, requestFocus()
+                        // still threw here in practice (confirmed twice on
+                        // real hardware) - so this is wrapped rather than
+                        // trusted further. Worst case if it still fails:
+                        // auto-focus-on-launch doesn't happen, and the
+                        // pager gets focus on the first click instead.
+                        .onGloballyPositioned {
+                            if (!hasRequestedInitialFocus) {
+                                hasRequestedInitialFocus = true
+                                try {
+                                    focusRequester.requestFocus()
+                                } catch (e: IllegalStateException) {
+                                    // see comment above
+                                }
                             }
                         }
-                        else -> false
+                        .focusable()
+                        .onKeyEvent { event ->
+                            if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+                            when (event.key) {
+                                // Ctrl matches hypseus's own KEY_BUTTON1
+                                // default (SDLK_LCTRL, the confirm/action
+                                // button) in both hypinput_gamepad.ini in
+                                // this install and the plain hypinput.ini
+                                // reference in the vendored source - the
+                                // ecosystem's standard confirm key.
+                                Key.Enter, Key.NumPadEnter, Key.CtrlLeft -> {
+                                    launchCentered()
+                                    true
+                                }
+                                // #19 - Down opens the centered card's
+                                // options screen, alongside clicking its
+                                // gear icon.
+                                Key.DirectionDown -> {
+                                    onOpenOptions(games[pagerState.currentPage])
+                                    true
+                                }
+                                Key.DirectionLeft -> {
+                                    pageLeft()
+                                    true
+                                }
+                                Key.DirectionRight -> {
+                                    pageRight()
+                                    true
+                                }
+                                // #43 - carousel/home screen only: every
+                                // other screen keeps its own existing
+                                // Escape-to-back behavior untouched. Only
+                                // quits while Full Screen is on - off
+                                // means windowed mode, where Escape on the
+                                // carousel does nothing (there's no back
+                                // destination from the home screen),
+                                // matching the owner's own description
+                                // exactly.
+                                Key.Escape -> {
+                                    if (appSettings.fullscreenEnabled) {
+                                        onQuit()
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                }
+                                else -> false
+                            }
+                        },
+                ) { page ->
+                    val game = games[page]
+                    val pageOffset = ((pagerState.currentPage - page) + pagerState.currentPageOffsetFraction).absoluteValue
+                    val scale = 0.82f + (1f - 0.82f) * (1f - pageOffset.coerceIn(0f, 1f))
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        GameCard(
+                            game = game,
+                            coverArtFile = coverArtFileFor(game),
+                            scale = scale,
+                            onClick = { launchGame(game, installRoot, extraArgsFor(game)) },
+                            onOpenOptions = { onOpenOptions(game) },
+                        )
                     }
-                },
-        ) { page ->
-            val game = games[page]
-            val pageOffset = ((pagerState.currentPage - page) + pagerState.currentPageOffsetFraction).absoluteValue
-            val scale = 0.82f + (1f - 0.82f) * (1f - pageOffset.coerceIn(0f, 1f))
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                GameCard(
-                    game = game,
-                    coverArtFile = coverArtFileFor(game),
-                    scale = scale,
-                    onClick = { launchGame(game, installRoot, extraArgsFor(game)) },
-                    onOpenOptions = { onOpenOptions(game) },
-                )
-            }
-        }
-
-        // #17 - visible mouse-clickable paging, the direct mouse
-        // equivalent of the arrow keys.
-        IconButton(
-            onClick = ::pageLeft,
-            modifier = Modifier.align(Alignment.CenterStart).padding(8.dp),
-        ) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Previous game")
-        }
-        IconButton(
-            onClick = ::pageRight,
-            modifier = Modifier.align(Alignment.CenterEnd).padding(8.dp),
-        ) {
-            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Next game")
-        }
-
-        // #43/#39 - top-right icon cluster: an optional X (quits the app,
-        // shown only while Full Screen is on - windowed mode already has
-        // the OS title bar's own close button, so a second one would be
-        // redundant) plus the existing Settings gear (#24). Both share the
-        // same semi-transparent dark scrim circle #19 already established
-        // for each card's own gear icon, applied here for the first time
-        // to these top-level icons - fixes #39's low-contrast-against-
-        // real-background-art finding as a natural consequence of putting
-        // the X right next to it, not a separate change.
-        Row(
-            modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            if (appSettings.fullscreenEnabled) {
-                Box(
-                    modifier = Modifier
-                        .size(32.dp)
-                        .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.5f))
-                        .clickable(onClick = onQuit),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(Icons.Filled.Close, contentDescription = "Quit", tint = Color.White)
                 }
-            }
-            Box(
-                modifier = Modifier
-                    .size(32.dp)
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.5f))
-                    .clickable(onClick = onOpenSettings),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = Color.White)
+
+                // #17 - visible mouse-clickable paging, the direct mouse
+                // equivalent of the arrow keys. Local to this box, not
+                // Android's own top bar - a Windows-only addition, kept
+                // where it's always been.
+                IconButton(
+                    onClick = ::pageLeft,
+                    modifier = Modifier.align(Alignment.CenterStart).padding(8.dp),
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Previous game")
+                }
+                IconButton(
+                    onClick = ::pageRight,
+                    modifier = Modifier.align(Alignment.CenterEnd).padding(8.dp),
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Next game")
+                }
             }
         }
     }
 }
+
+// #57 - loads the real Hypdroid logo from a plain classpath resource
+// (windows/src/main/resources/hypdroid_logo.png, copied in from the real
+// Android asset). This genuinely is the compile-time bundled-asset case
+// loadImageBitmap's own deprecation warning targets (unlike GameCard's
+// runtime media/ files below) - the simpler classpath-resource path was
+// a deliberate choice over wiring up Compose's full resources system for
+// one static image, not an oversight. Returns null (silently, no crash)
+// if the resource is ever missing - the top bar simply omits the logo.
+@Suppress("DEPRECATION")
+private fun loadHypdroidLogo(): ImageBitmap? =
+    try {
+        object {}.javaClass.getResourceAsStream("/hypdroid_logo.png")?.buffered()?.use(::loadImageBitmap)
+    } catch (e: IOException) {
+        null
+    }
 
 // loadImageBitmap is deprecated in favor of Compose's bundled resources
 // library - that migration is for compile-time app assets, not runtime
