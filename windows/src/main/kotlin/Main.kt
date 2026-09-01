@@ -184,6 +184,13 @@ private fun HypdroidApp(
     // the page inside it (as #17 originally did) would reset to page 0
     // every time - the same bug Android's own #52 fix already addressed.
     var carouselPage by remember { mutableStateOf(0) }
+    // #48 fix - same reasoning as carouselPage above: ControlsScreen gets
+    // torn down and recreated on a trip to the carousel (to launch a
+    // game) and back, so remembering the selected Controller Type inside
+    // it reset to Keyboard every time - confirmed live (owner: "switched
+    // to controller 1... came back to type and it defaulted to
+    // keyboard").
+    var controlsMode by remember { mutableStateOf("Keyboard") }
     var screen by remember { mutableStateOf<Screen>(Screen.Carousel) }
 
     when (val s = screen) {
@@ -213,6 +220,8 @@ private fun HypdroidApp(
         is Screen.Controls -> ControlsScreen(
             installRoot = installRoot,
             launcherFolder = launcherFolder,
+            mode = controlsMode,
+            onModeChanged = { controlsMode = it },
             onBack = { screen = Screen.Settings },
         )
         is Screen.About -> BlankPlaceholderScreen("About", onBack = { screen = Screen.Settings })
@@ -1215,12 +1224,17 @@ private data class TokenPickerRequest(
  * not an incidental detail.
  */
 @Composable
-private fun ControlsScreen(installRoot: File, launcherFolder: File?, onBack: () -> Unit) {
+private fun ControlsScreen(
+    installRoot: File,
+    launcherFolder: File?,
+    mode: String,
+    onModeChanged: (String) -> Unit,
+    onBack: () -> Unit,
+) {
     val iniFile = remember(installRoot) { gamepadIniPath(installRoot) }
     var iniText by remember { mutableStateOf(if (iniFile.isFile) iniFile.readText() else null) }
     val rows = remember(iniText) { iniText?.let { parseGamepadRows(it) } ?: emptyList() }
 
-    var mode by remember { mutableStateOf("Keyboard") }
     var showModePicker by remember { mutableStateOf(false) }
     var listeningForKeyName by remember { mutableStateOf<String?>(null) }
 
@@ -1416,7 +1430,7 @@ private fun ControlsScreen(installRoot: File, launcherFolder: File?, onBack: () 
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
-                                    mode = option
+                                    onModeChanged(option)
                                     showModePicker = false
                                 }
                                 .padding(vertical = 12.dp),
