@@ -135,6 +135,19 @@ class GamepadIniTest {
     }
 
     @Test
+    fun `updateGamepadBinding rewrites PAD1_BUTTON and AXIS_PAD1 - the real case 49's list-picker exercises`() {
+        val withButton = updateGamepadBinding(REAL_INI, "KEY_SKILL2", BindingSlot.PAD1_BUTTON, "BUTTON_Y")
+        val withBoth = updateGamepadBinding(withButton, "KEY_SKILL2", BindingSlot.AXIS_PAD1, "AXIS_RIGHT_DOWN")
+
+        val row = parseGamepadRows(withBoth).first { it.keyName == "KEY_SKILL2" }
+        assertEquals("BUTTON_Y", row.pad1Button)
+        assertEquals("AXIS_RIGHT_DOWN", row.axisPad1)
+        // KEY_SKILL2's own keyboard binding and Pad0 columns, untouched.
+        assertEquals("SDLK_Z", row.key1)
+        assertEquals("0", row.pad0Button)
+    }
+
+    @Test
     fun `updateGamepadBinding on a line with fewer than 6 tokens pads missing ones with 0`() {
         // KEY_SKILL1 has exactly 5 real tokens after "=" in the actual
         // file (SDLK_LSHIFT 0 0 0 0) - AxisPad1 is written explicitly
