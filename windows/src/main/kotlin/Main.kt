@@ -116,6 +116,11 @@ private sealed interface Screen {
     data object Export : Screen
     data class GameOptionsFor(val game: Game) : Screen
     data class GameHackFor(val game: Game) : Screen
+    // #92 - Cover Art/Bezel/Arguments each got their own dedicated page,
+    // split out of GameOptionsFor's old inline grid.
+    data class CoverArtSettingsFor(val game: Game) : Screen
+    data class BezelSettingsFor(val game: Game) : Screen
+    data class ArgumentsSettingsFor(val game: Game) : Screen
 }
 
 /**
@@ -288,11 +293,28 @@ private fun HypdroidApp(
         )
         is Screen.GameOptionsFor -> GameOptionsScreen(
             game = s.game,
-            launcherFolder = launcherFolder,
+            onOpenCoverArtSettings = { screen = Screen.CoverArtSettingsFor(s.game) },
+            onOpenBezelSettings = { screen = Screen.BezelSettingsFor(s.game) },
             onOpenGameHack = { screen = Screen.GameHackFor(s.game) },
+            onOpenArgumentsSettings = { screen = Screen.ArgumentsSettingsFor(s.game) },
             onBack = { screen = Screen.Carousel },
         )
         is Screen.GameHackFor -> GameHackScreen(
+            game = s.game,
+            launcherFolder = launcherFolder,
+            onBack = { screen = Screen.GameOptionsFor(s.game) },
+        )
+        is Screen.CoverArtSettingsFor -> CoverArtSettingsScreen(
+            game = s.game,
+            launcherFolder = launcherFolder,
+            onBack = { screen = Screen.GameOptionsFor(s.game) },
+        )
+        is Screen.BezelSettingsFor -> BezelSettingsScreen(
+            game = s.game,
+            launcherFolder = launcherFolder,
+            onBack = { screen = Screen.GameOptionsFor(s.game) },
+        )
+        is Screen.ArgumentsSettingsFor -> ArgumentsSettingsScreen(
             game = s.game,
             launcherFolder = launcherFolder,
             onBack = { screen = Screen.GameOptionsFor(s.game) },
@@ -857,32 +879,190 @@ private fun GameCard(game: Game, coverArtFile: File?, scale: Float, onClick: () 
  * #87 - Scorebezel Autofit's own row is commented out (not deleted) -
  * see the comment right above it in this function's own body.
  */
-// #83 - the real, ordered flat-list stops this screen can have.
-// OVERLAY_BEZEL_SWITCH only ever appears in the real list while
-// BEZEL_SWITCH is on, matching the screen's own real conditional layout
-// - same reasoning as AppSettingsControl's own identical comment.
-// #87 - SCOREBEZEL_AUTOFIT_SWITCH removed (commented out below, not
-// deleted): the toggle it drove sent -scorebezel_autofit, which turned
-// out not to be a real hypseus argument at all - see GameOptions.kt's
-// own launchArgumentsFor() comment.
-private enum class GameOptionsControl { COVER_ART_CHANGE, GAME_HACKS, BEZEL_SWITCH, /* SCOREBEZEL_AUTOFIT_SWITCH, */ OVERLAY_BEZEL_SWITCH }
+// #92 - the real grid-navigation topology (SettingsFocus's own model,
+// #76/#91's established pattern) for the 5-card summary redesign:
+// row1 Cover Art Settings|Bezel Settings, row2 Game Hacks Settings|
+// Video Snaps Settings (non-interactive placeholder, no focus value of
+// its own - the owner's own call: not a real tappable stub), row3
+// Arguments Settings|blank.
+private enum class GameOptionsFocus { COVER_ART_SETTINGS, BEZEL_SETTINGS, GAME_HACKS_SETTINGS, ARGUMENTS_SETTINGS }
 
+private fun GameOptionsFocus.moveUp(): GameOptionsFocus = when (this) {
+    GameOptionsFocus.GAME_HACKS_SETTINGS -> GameOptionsFocus.COVER_ART_SETTINGS
+    GameOptionsFocus.ARGUMENTS_SETTINGS -> GameOptionsFocus.GAME_HACKS_SETTINGS
+    else -> this
+}
+
+private fun GameOptionsFocus.moveDown(): GameOptionsFocus = when (this) {
+    GameOptionsFocus.COVER_ART_SETTINGS -> GameOptionsFocus.GAME_HACKS_SETTINGS
+    GameOptionsFocus.GAME_HACKS_SETTINGS -> GameOptionsFocus.ARGUMENTS_SETTINGS
+    else -> this
+}
+
+private fun GameOptionsFocus.moveLeft(): GameOptionsFocus = when (this) {
+    GameOptionsFocus.BEZEL_SETTINGS -> GameOptionsFocus.COVER_ART_SETTINGS
+    else -> this
+}
+
+private fun GameOptionsFocus.moveRight(): GameOptionsFocus = when (this) {
+    GameOptionsFocus.COVER_ART_SETTINGS -> GameOptionsFocus.BEZEL_SETTINGS
+    else -> this
+}
+
+/**
+ * #92 - redesigned into 5 consistent summary cards, mirroring Hypdroid#161
+ * and matching the same small-cards-tap-through-to-a-dedicated-page shape
+ * Settings already uses: no controls sit inline here anymore. Cover Art
+ * Settings/Bezel Settings/Game Hacks Settings/Arguments Settings are real
+ * destinations; Video Snaps Settings is a non-interactive placeholder
+ * (the owner's own call - not part of the flat-list/grid navigation at
+ * all, matching every other blank-placeholder card already in this app).
+ */
 @Composable
-private fun GameOptionsScreen(game: Game, launcherFolder: File?, onOpenGameHack: () -> Unit, onBack: () -> Unit) {
+private fun GameOptionsScreen(
+    game: Game,
+    onOpenCoverArtSettings: () -> Unit,
+    onOpenBezelSettings: () -> Unit,
+    onOpenGameHack: () -> Unit,
+    onOpenArgumentsSettings: () -> Unit,
+    onBack: () -> Unit,
+) {
+    var focus by remember(game) { mutableStateOf(GameOptionsFocus.COVER_ART_SETTINGS) }
+
+    fun openFocused() {
+        when (focus) {
+            GameOptionsFocus.COVER_ART_SETTINGS -> onOpenCoverArtSettings()
+            GameOptionsFocus.BEZEL_SETTINGS -> onOpenBezelSettings()
+            GameOptionsFocus.GAME_HACKS_SETTINGS -> onOpenGameHack()
+            GameOptionsFocus.ARGUMENTS_SETTINGS -> onOpenArgumentsSettings()
+        }
+    }
+
+    // #69's own framing, reused: a second real input source feeding the
+    // exact same actions the keyboard onKeyEvent below already handles.
+    LaunchedEffect(Unit) {
+        GamepadInputBus.events.collect { action ->
+            when (action) {
+                GamepadAction.UP -> focus = focus.moveUp()
+                GamepadAction.LEFT -> focus = focus.moveLeft()
+                GamepadAction.RIGHT -> focus = focus.moveRight()
+                GamepadAction.LAUNCH -> openFocused()
+                GamepadAction.OPTIONS -> focus = focus.moveDown()
+                GamepadAction.BACK -> onBack()
+            }
+        }
+    }
+
+    val focusRequester = remember(game) { FocusRequester() }
+    var hasRequestedInitialFocus by remember(game) { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+            .focusRequester(focusRequester)
+            .onGloballyPositioned {
+                if (!hasRequestedInitialFocus) {
+                    hasRequestedInitialFocus = true
+                    try {
+                        focusRequester.requestFocus()
+                    } catch (e: IllegalStateException) {
+                        // see #17's identical guard on GameCarousel
+                    }
+                }
+            }
+            .focusable()
+            .onKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+                when (event.key) {
+                    Key.Escape -> {
+                        onBack()
+                        true
+                    }
+                    Key.Enter, Key.NumPadEnter, Key.CtrlLeft -> {
+                        openFocused()
+                        true
+                    }
+                    Key.DirectionUp -> {
+                        focus = focus.moveUp()
+                        true
+                    }
+                    Key.DirectionDown -> {
+                        focus = focus.moveDown()
+                        true
+                    }
+                    Key.DirectionLeft -> {
+                        focus = focus.moveLeft()
+                        true
+                    }
+                    Key.DirectionRight -> {
+                        focus = focus.moveRight()
+                        true
+                    }
+                    else -> false
+                }
+            },
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Options: ${game.name}", style = MaterialTheme.typography.titleLarge)
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            SettingsCard("Cover Art Settings", "Per-game cover art override", Modifier.weight(1f), focus == GameOptionsFocus.COVER_ART_SETTINGS, { focus = GameOptionsFocus.COVER_ART_SETTINGS }, onOpenCoverArtSettings)
+            SettingsCard("Bezel Settings", "Bezel and overlay bezel", Modifier.weight(1f), focus == GameOptionsFocus.BEZEL_SETTINGS, { focus = GameOptionsFocus.BEZEL_SETTINGS }, onOpenBezelSettings)
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            SettingsCard("Game Hacks Settings", "Custom game fixes", Modifier.weight(1f), focus == GameOptionsFocus.GAME_HACKS_SETTINGS, { focus = GameOptionsFocus.GAME_HACKS_SETTINGS }, onOpenGameHack)
+            // #92 - non-interactive placeholder, the owner's own call:
+            // not a real tappable stub, not part of the grid navigation
+            // at all - a plain OutlinedCard with just its title text,
+            // matching every other blank-placeholder card in this app
+            // except it keeps the text so it doesn't look broken.
+            OutlinedCard(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text("Video Snaps Settings (Future Place Holder)", style = MaterialTheme.typography.titleMedium)
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            SettingsCard("Arguments Settings", "Custom launch arguments", Modifier.weight(1f), focus == GameOptionsFocus.ARGUMENTS_SETTINGS, { focus = GameOptionsFocus.ARGUMENTS_SETTINGS }, onOpenArgumentsSettings)
+            // Blank/TBD, matching GameHackScreen's own identical
+            // blank-second-card precedent.
+            OutlinedCard(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.padding(12.dp).fillMaxWidth()) {}
+            }
+        }
+    }
+}
+
+// #92 - CoverArtSettingsScreen's own flat list is 0 or 1 items
+// depending on Global Cover Art (matching #85's own precedent) -
+// maxOf(0, controls.lastIndex) guards focusIndex.coerceIn() against the
+// empty-list case (lastIndex == -1), which coerceIn() would otherwise
+// throw on.
+private enum class CoverArtSettingsControl { CHANGE }
+
+/**
+ * #92 - Cover Art's own dedicated page, split out of the old inline
+ * GameOptionsScreen grid. Content and #85's greyed-out-while-Global-
+ * Cover-Art-is-on behavior are unchanged, just relocated to their own
+ * two-column page (a blank second card, matching every other single-
+ * card destination page in this app).
+ */
+@Composable
+private fun CoverArtSettingsScreen(game: Game, launcherFolder: File?, onBack: () -> Unit) {
     var options by remember(game) {
         mutableStateOf(if (launcherFolder != null) loadOptions(launcherFolder, game.name) else GameOptions())
     }
-    var newArgument by remember(game) { mutableStateOf("") }
     var showCoverArtPicker by remember(game) { mutableStateOf(false) }
-
-    // #85 - real, live-found gap, confirmed against a real screenshot of
-    // the real Android app: a per-game Cover Art override has zero
-    // effect while Global Cover Art is on (GameCardArt.kt's own
-    // effectiveCoverArtFile() never even reads it in that case - the
-    // real Android precedence this was already confirmed against). The
-    // real app greys out its own Change button and explains why
-    // ("Controlled by Settings > Global Cover Art") rather than leaving
-    // it reachable-but-pointless.
     val appSettings = remember(launcherFolder) {
         if (launcherFolder != null) loadAppSettings(launcherFolder) else AppSettings()
     }
@@ -892,60 +1072,26 @@ private fun GameOptionsScreen(game: Game, launcherFolder: File?, onOpenGameHack:
         if (launcherFolder != null) saveOptions(launcherFolder, game.name, updated)
     }
 
-    // #83 - same flat-list model #76 established: one ordered list of
-    // this screen's real controls, left column top-to-bottom then right
-    // column (matching #76's own AppSettingsScreen ordering), Overlay
-    // Bezel only in the list while Bezel is actually on. The Arguments
-    // card (text field, Add, remove buttons) is deliberately not part of
-    // this list at all - confirmed with the owner while scoping #83: a
-    // controller can't type into that field regardless of whether it's
-    // reachable, so making the rest of the card focusable would be
-    // reachable-but-useless.
-    //
-    // #85 - COVER_ART_CHANGE only enters the list while Global Cover Art
-    // is actually off, same "conditionally-visible control enters/leaves
-    // the list exactly when it's actually usable" rule #76 already
-    // established for AppSettingsScreen's own Change button - not just
-    // visually disabled, genuinely unreachable via Up/Down either.
-    val controls = remember(options.bezelEnabled, appSettings.globalCoverArtEnabled) {
-        buildList {
-            if (!appSettings.globalCoverArtEnabled) add(GameOptionsControl.COVER_ART_CHANGE)
-            add(GameOptionsControl.GAME_HACKS)
-            add(GameOptionsControl.BEZEL_SWITCH)
-            // #87 - add(GameOptionsControl.SCOREBEZEL_AUTOFIT_SWITCH)
-            if (options.bezelEnabled) add(GameOptionsControl.OVERLAY_BEZEL_SWITCH)
-        }
+    val controls = remember(appSettings.globalCoverArtEnabled) {
+        if (!appSettings.globalCoverArtEnabled) listOf(CoverArtSettingsControl.CHANGE) else emptyList()
     }
     var focusIndex by remember(game) { mutableStateOf(0) }
-    val focusedControl = controls.getOrNull(focusIndex.coerceIn(0, controls.lastIndex))
-    // #76's own fix for the same LaunchedEffect(Unit)-never-restarts
-    // staleness - see its own comment on AppSettingsScreen for why this
-    // indirection is needed.
+    val focusedControl = controls.getOrNull(focusIndex.coerceIn(0, maxOf(0, controls.lastIndex)))
     val currentFocusedControl by rememberUpdatedState(focusedControl)
 
     fun moveFocusUp() {
         focusIndex = (focusIndex - 1).coerceAtLeast(0)
     }
     fun moveFocusDown() {
-        focusIndex = (focusIndex + 1).coerceAtMost(controls.lastIndex)
+        focusIndex = (focusIndex + 1).coerceAtMost(maxOf(0, controls.lastIndex))
     }
     fun activateFocused() {
         when (currentFocusedControl) {
-            GameOptionsControl.COVER_ART_CHANGE -> showCoverArtPicker = true
-            GameOptionsControl.GAME_HACKS -> onOpenGameHack()
-            GameOptionsControl.BEZEL_SWITCH -> persist(options.copy(bezelEnabled = !options.bezelEnabled))
-            // #87 - GameOptionsControl.SCOREBEZEL_AUTOFIT_SWITCH -> persist(options.copy(scorebezelAutofit = !options.scorebezelAutofit))
-            GameOptionsControl.OVERLAY_BEZEL_SWITCH -> persist(options.copy(overlayBezel = !options.overlayBezel))
+            CoverArtSettingsControl.CHANGE -> showCoverArtPicker = true
             null -> Unit
         }
     }
 
-    // #69 - B backs out of this screen, completing the loop the
-    // carousel's own gamepad OPTIONS action opens. #83 extends this to
-    // the rest of this screen's own real navigation. Same
-    // showCoverArtPicker guard AppSettingsScreen's own gamepad effect
-    // uses (#76) - the dialog is additive, not a replacement, so this
-    // screen's own collector keeps running underneath it.
     LaunchedEffect(Unit) {
         GamepadInputBus.events.collect { action ->
             if (showCoverArtPicker) return@collect
@@ -959,10 +1105,6 @@ private fun GameOptionsScreen(game: Game, launcherFolder: File?, onOpenGameHack:
         }
     }
 
-    // Escape matches hypseus's own KEY_QUIT default (SDLK_ESCAPE) - no
-    // dedicated "back" binding exists in hypinput_gamepad.ini, but Escape
-    // is the closest ecosystem convention, same reasoning as Ctrl for
-    // launch in #17.
     val focusRequester = remember(game) { FocusRequester() }
     var hasRequestedInitialFocus by remember(game) { mutableStateOf(false) }
 
@@ -1010,73 +1152,188 @@ private fun GameOptionsScreen(game: Game, launcherFolder: File?, onOpenGameHack:
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
             }
             Spacer(modifier = Modifier.width(8.dp))
-            Text("Options: ${game.name}", style = MaterialTheme.typography.titleLarge)
+            Text("Cover Art Settings: ${game.name}", style = MaterialTheme.typography.titleLarge)
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
-        Row(modifier = Modifier.fillMaxWidth().padding(top = 24.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Column(modifier = Modifier.weight(1f)) {
-                // #30 - real per-game Cover Art override. Shows the
-                // resolved effective type (override, else BOX) -
-                // confirmed on a real device that a game with no override
-                // still shows BOX, not a blank state.
-                OutlinedCard {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Cover Art", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                            Button(
-                                onClick = { showCoverArtPicker = true },
-                                // #85 - disabled while Global Cover Art is
-                                // on: a per-game override has zero effect
-                                // then (GameCardArt.kt's own
-                                // effectiveCoverArtFile() never reads it),
-                                // matching the real app rather than
-                                // leaving this reachable-but-pointless.
-                                enabled = !appSettings.globalCoverArtEnabled,
-                                interactionSource = rememberFocusInteractionSource(
-                                    isFocused = focusedControl == GameOptionsControl.COVER_ART_CHANGE,
-                                    onRealHover = { focusIndex = controls.indexOf(GameOptionsControl.COVER_ART_CHANGE) },
-                                ),
-                            ) { Text("Change") }
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        // #85 - the actually-effective type while Global
-                        // Cover Art is on is the global type, not this
-                        // game's own (ignored) override - showing the
-                        // per-game value here would be misleading about
-                        // what actually renders on the carousel.
-                        val effectiveType = if (appSettings.globalCoverArtEnabled) {
-                            appSettings.globalCoverArtType
-                        } else {
-                            options.coverArtOverride ?: CoverArtType.BOX
-                        }
-                        Text(effectiveType.name, style = MaterialTheme.typography.bodyMedium)
-                        if (appSettings.globalCoverArtEnabled) {
-                            Text(
-                                "Controlled by Settings > Global Cover Art",
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                        }
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            // #30 - real per-game Cover Art override. Shows the resolved
+            // effective type (override, else BOX) - confirmed on a real
+            // device that a game with no override still shows BOX, not a
+            // blank state.
+            OutlinedCard(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Cover Art", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                        Button(
+                            onClick = { showCoverArtPicker = true },
+                            // #85 - disabled while Global Cover Art is on:
+                            // a per-game override has zero effect then
+                            // (GameCardArt.kt's own effectiveCoverArtFile()
+                            // never reads it), matching the real app
+                            // rather than leaving this reachable-but-
+                            // pointless.
+                            enabled = !appSettings.globalCoverArtEnabled,
+                            interactionSource = rememberFocusInteractionSource(
+                                isFocused = focusedControl == CoverArtSettingsControl.CHANGE,
+                                onRealHover = { focusIndex = controls.indexOf(CoverArtSettingsControl.CHANGE) },
+                            ),
+                        ) { Text("Change") }
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    // #85 - the actually-effective type while Global
+                    // Cover Art is on is the global type, not this game's
+                    // own (ignored) override - showing the per-game value
+                    // here would be misleading about what actually
+                    // renders on the carousel.
+                    val effectiveType = if (appSettings.globalCoverArtEnabled) {
+                        appSettings.globalCoverArtType
+                    } else {
+                        options.coverArtOverride ?: CoverArtType.BOX
+                    }
+                    Text(effectiveType.name, style = MaterialTheme.typography.bodyMedium)
+                    if (appSettings.globalCoverArtEnabled) {
+                        Text(
+                            "Controlled by Settings > Global Cover Art",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
                     }
                 }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // #83 - reuses SettingsCard verbatim rather than hand-
-                // rolling a second copy of the same title+subtitle+focus
-                // card shape - this card's own content already matched
-                // it exactly (titleMedium/bodySmall, 12dp padding).
-                SettingsCard(
-                    "Game Hacks",
-                    "Custom game fixes",
-                    Modifier.fillMaxWidth(),
-                    focusedControl == GameOptionsControl.GAME_HACKS,
-                    { focusIndex = controls.indexOf(GameOptionsControl.GAME_HACKS) },
-                    onOpenGameHack,
-                )
             }
 
+            // Blank/TBD, matching GameHackScreen's own identical
+            // blank-second-card precedent.
+            OutlinedCard(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.padding(12.dp).fillMaxWidth()) {}
+            }
+        }
+    }
+
+    if (showCoverArtPicker) {
+        CoverArtPickerDialog(
+            onSelect = { type ->
+                persist(options.copy(coverArtOverride = type))
+                showCoverArtPicker = false
+            },
+            onDismiss = { showCoverArtPicker = false },
+        )
+    }
+}
+
+// #92 - the real, ordered flat-list stops this screen can have.
+// OVERLAY_BEZEL_SWITCH only ever appears in the real list while
+// BEZEL_SWITCH is on, matching the screen's own real conditional layout
+// - same reasoning as AppSettingsControl's own identical comment.
+private enum class BezelSettingsControl { BEZEL_SWITCH, OVERLAY_BEZEL_SWITCH }
+
+/**
+ * #92 - Bezel's own dedicated page, split out of the old inline
+ * GameOptionsScreen grid. Both real toggles (including #89's
+ * hypseus-singe-3.0.2 warning on Overlay Bezel) are unchanged, just
+ * relocated to their own two-column page (a blank second card, matching
+ * every other single-card destination page in this app).
+ */
+@Composable
+private fun BezelSettingsScreen(game: Game, launcherFolder: File?, onBack: () -> Unit) {
+    var options by remember(game) {
+        mutableStateOf(if (launcherFolder != null) loadOptions(launcherFolder, game.name) else GameOptions())
+    }
+
+    fun persist(updated: GameOptions) {
+        options = updated
+        if (launcherFolder != null) saveOptions(launcherFolder, game.name, updated)
+    }
+
+    val controls = remember(options.bezelEnabled) {
+        buildList {
+            add(BezelSettingsControl.BEZEL_SWITCH)
+            if (options.bezelEnabled) add(BezelSettingsControl.OVERLAY_BEZEL_SWITCH)
+        }
+    }
+    var focusIndex by remember(game) { mutableStateOf(0) }
+    val focusedControl = controls.getOrNull(focusIndex.coerceIn(0, maxOf(0, controls.lastIndex)))
+    val currentFocusedControl by rememberUpdatedState(focusedControl)
+
+    fun moveFocusUp() {
+        focusIndex = (focusIndex - 1).coerceAtLeast(0)
+    }
+    fun moveFocusDown() {
+        focusIndex = (focusIndex + 1).coerceAtMost(maxOf(0, controls.lastIndex))
+    }
+    fun activateFocused() {
+        when (currentFocusedControl) {
+            BezelSettingsControl.BEZEL_SWITCH -> persist(options.copy(bezelEnabled = !options.bezelEnabled))
+            BezelSettingsControl.OVERLAY_BEZEL_SWITCH -> persist(options.copy(overlayBezel = !options.overlayBezel))
+            null -> Unit
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        GamepadInputBus.events.collect { action ->
+            when (action) {
+                GamepadAction.UP -> moveFocusUp()
+                GamepadAction.OPTIONS -> moveFocusDown()
+                GamepadAction.LAUNCH -> activateFocused()
+                GamepadAction.BACK -> onBack()
+                GamepadAction.LEFT, GamepadAction.RIGHT -> Unit
+            }
+        }
+    }
+
+    val focusRequester = remember(game) { FocusRequester() }
+    var hasRequestedInitialFocus by remember(game) { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+            .focusRequester(focusRequester)
+            .onGloballyPositioned {
+                if (!hasRequestedInitialFocus) {
+                    hasRequestedInitialFocus = true
+                    try {
+                        focusRequester.requestFocus()
+                    } catch (e: IllegalStateException) {
+                        // see #17's identical guard on GameCarousel
+                    }
+                }
+            }
+            .focusable()
+            .onKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+                when (event.key) {
+                    Key.Escape -> {
+                        onBack()
+                        true
+                    }
+                    Key.Enter, Key.NumPadEnter, Key.CtrlLeft -> {
+                        activateFocused()
+                        true
+                    }
+                    Key.DirectionUp -> {
+                        moveFocusUp()
+                        true
+                    }
+                    Key.DirectionDown -> {
+                        moveFocusDown()
+                        true
+                    }
+                    else -> false
+                }
+            },
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Bezel Settings: ${game.name}", style = MaterialTheme.typography.titleLarge)
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedCard(modifier = Modifier.weight(1f)) {
                 Column(modifier = Modifier.padding(12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1088,36 +1345,11 @@ private fun GameOptionsScreen(game: Game, launcherFolder: File?, onOpenGameHack:
                             checked = options.bezelEnabled,
                             onCheckedChange = { persist(options.copy(bezelEnabled = it)) },
                             interactionSource = rememberFocusInteractionSource(
-                                isFocused = focusedControl == GameOptionsControl.BEZEL_SWITCH,
-                                onRealHover = { focusIndex = controls.indexOf(GameOptionsControl.BEZEL_SWITCH) },
+                                isFocused = focusedControl == BezelSettingsControl.BEZEL_SWITCH,
+                                onRealHover = { focusIndex = controls.indexOf(BezelSettingsControl.BEZEL_SWITCH) },
                             ),
                         )
                     }
-
-                    /* #87 - -scorebezel_autofit isn't a real hypseus
-                     * argument (see GameOptions.kt's own
-                     * launchArgumentsFor() comment) - commented out, not
-                     * deleted, on the chance a future hypseus-singe
-                     * release adds real support.
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Scorebezel Autofit", style = MaterialTheme.typography.titleMedium)
-                            Text(
-                                if (options.scorebezelAutofit) "On" else "Off",
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                        }
-                        Switch(
-                            checked = options.scorebezelAutofit,
-                            onCheckedChange = { persist(options.copy(scorebezelAutofit = it)) },
-                            interactionSource = rememberFocusInteractionSource(
-                                isFocused = focusedControl == GameOptionsControl.SCOREBEZEL_AUTOFIT_SWITCH,
-                                onRealHover = { focusIndex = controls.indexOf(GameOptionsControl.SCOREBEZEL_AUTOFIT_SWITCH) },
-                            ),
-                        )
-                    }
-                    */
 
                     if (options.bezelEnabled) {
                         Spacer(modifier = Modifier.height(8.dp))
@@ -1144,17 +1376,90 @@ private fun GameOptionsScreen(game: Game, launcherFolder: File?, onOpenGameHack:
                                 checked = options.overlayBezel,
                                 onCheckedChange = { persist(options.copy(overlayBezel = it)) },
                                 interactionSource = rememberFocusInteractionSource(
-                                    isFocused = focusedControl == GameOptionsControl.OVERLAY_BEZEL_SWITCH,
-                                    onRealHover = { focusIndex = controls.indexOf(GameOptionsControl.OVERLAY_BEZEL_SWITCH) },
+                                    isFocused = focusedControl == BezelSettingsControl.OVERLAY_BEZEL_SWITCH,
+                                    onRealHover = { focusIndex = controls.indexOf(BezelSettingsControl.OVERLAY_BEZEL_SWITCH) },
                                 ),
                             )
                         }
                     }
                 }
             }
+
+            // Blank/TBD, matching GameHackScreen's own identical
+            // blank-second-card precedent.
+            OutlinedCard(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.padding(12.dp).fillMaxWidth()) {}
+            }
+        }
+    }
+}
+
+/**
+ * #92 - Arguments' own dedicated page, split out of the old inline
+ * GameOptionsScreen grid where it competed for leftover vertical space.
+ * Same internal layout as before (free-text field + Add button + full
+ * list of added arguments), full width - the one deliberate exception
+ * to every other destination page's two-column shape, since this is the
+ * one page that actually needs the room. No flat-list keyboard/gamepad
+ * navigation here, same #83 scoping decision carried forward: a
+ * controller can't type into the text field regardless of reachability,
+ * so only B/Escape (back) is wired.
+ */
+@Composable
+private fun ArgumentsSettingsScreen(game: Game, launcherFolder: File?, onBack: () -> Unit) {
+    var options by remember(game) {
+        mutableStateOf(if (launcherFolder != null) loadOptions(launcherFolder, game.name) else GameOptions())
+    }
+    var newArgument by remember(game) { mutableStateOf("") }
+
+    fun persist(updated: GameOptions) {
+        options = updated
+        if (launcherFolder != null) saveOptions(launcherFolder, game.name, updated)
+    }
+
+    LaunchedEffect(Unit) {
+        GamepadInputBus.events.collect { action ->
+            if (action == GamepadAction.BACK) onBack()
+        }
+    }
+
+    val focusRequester = remember(game) { FocusRequester() }
+    var hasRequestedInitialFocus by remember(game) { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+            .focusRequester(focusRequester)
+            .onGloballyPositioned {
+                if (!hasRequestedInitialFocus) {
+                    hasRequestedInitialFocus = true
+                    try {
+                        focusRequester.requestFocus()
+                    } catch (e: IllegalStateException) {
+                        // see #17's identical guard on GameCarousel
+                    }
+                }
+            }
+            .focusable()
+            .onKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
+                    onBack()
+                    true
+                } else {
+                    false
+                }
+            },
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Arguments Settings: ${game.name}", style = MaterialTheme.typography.titleLarge)
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
         OutlinedCard(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(12.dp).fillMaxSize()) {
@@ -1208,16 +1513,6 @@ private fun GameOptionsScreen(game: Game, launcherFolder: File?, onOpenGameHack:
                 }
             }
         }
-    }
-
-    if (showCoverArtPicker) {
-        CoverArtPickerDialog(
-            onSelect = { type ->
-                persist(options.copy(coverArtOverride = type))
-                showCoverArtPicker = false
-            },
-            onDismiss = { showCoverArtPicker = false },
-        )
     }
 }
 
@@ -1401,21 +1696,20 @@ private fun GameHackScreen(game: Game, launcherFolder: File?, onBack: () -> Unit
             null -> Unit
         }
     }
+    */
 
-    // #83 - this screen had no gamepad wiring at all before, not even
-    // BACK - same #69 framing every other screen already uses.
+    // #92 follow-up - real, live-found regression: #87's revert
+    // commented out the *whole* gamepad block above, including plain
+    // B-back, which isn't tied to the removed Aspect Ratio Bezel Fix
+    // feature at all and should have stayed - every screen gets at
+    // least this much, same #69 baseline every other simple screen
+    // (ArgumentsSettingsScreen, the pre-#83 version of this screen
+    // itself) already uses.
     LaunchedEffect(Unit) {
         GamepadInputBus.events.collect { action ->
-            when (action) {
-                GamepadAction.UP -> moveFocusUp()
-                GamepadAction.OPTIONS -> moveFocusDown()
-                GamepadAction.LAUNCH -> activateFocused()
-                GamepadAction.BACK -> onBack()
-                GamepadAction.LEFT, GamepadAction.RIGHT -> Unit
-            }
+            if (action == GamepadAction.BACK) onBack()
         }
     }
-    */
 
     // Escape matches hypseus's own KEY_QUIT default - same as #19's
     // GameOptionsScreen.
