@@ -135,11 +135,16 @@ private sealed interface Screen {
  */
 fun main() = application {
     val launcherFolder = remember { resolveLauncherFolder() }
+    // #94 - first real log line of every session, matching what
+    // resolveLauncherFolder()'s own doc comment says about when this is
+    // meaningful at all (the packaged app only - log() itself is a
+    // silent no-op otherwise).
+    remember(launcherFolder) { log(launcherFolder, "HypdroidDesktop started") }
     // #68/#69 - real gamepad input, confirmed live working (#68). Starts
     // once (remember(Unit), not per-recomposition) and runs for the
     // app's whole lifetime - individual screens react to it (or don't)
     // via GamepadInputBus, per their own LaunchedEffect.
-    remember(Unit) { startGamepadInput() }
+    remember(Unit) { startGamepadInput(launcherFolder) }
     val initialFullscreenEnabled = remember(launcherFolder) {
         launcherFolder?.let { loadAppSettings(it).fullscreenEnabled } ?: false
     }
@@ -156,14 +161,43 @@ fun main() = application {
     Window(onCloseRequest = ::exitApplication, title = "HypdroidDesktop", state = windowState) {
         MaterialTheme(colorScheme = HypdroidColorScheme) {
             Surface(modifier = Modifier.fillMaxSize()) {
-                val installRoot = remember { resolveInstallRoot() }
+                // #94 - logUnexpectedExceptions wraps these two real I/O
+                // calls specifically (not the whole startup block) -
+                // genuinely unforeseen exceptions get a durable stack
+                // trace logged before they propagate, rather than
+                // vanishing; behavior itself is unchanged since it still
+                // rethrows. The known-outcome log lines (.also{}) live
+                // inside the same remember{} as the value itself so they
+                // fire exactly once per resolved value, not on every
+                // recomposition of the Text/branch below.
+                val installRoot = remember {
+                    logUnexpectedExceptions(launcherFolder, "resolving the install root") { resolveInstallRoot() }
+                        .also { root ->
+                            log(
+                                launcherFolder,
+                                if (root == null) {
+                                    "Could not determine install root - HypdroidDesktop is not running from inside a hypseus install"
+                                } else {
+                                    "Install root resolved: $root"
+                                },
+                            )
+                        }
+                }
 
                 when {
                     installRoot == null -> Text(
                         "Could not determine where HypdroidDesktop is running from.",
                         modifier = Modifier.padding(16.dp),
                     )
-                    else -> when (val result = remember(installRoot) { scanGames(installRoot) }) {
+                    else -> when (val result = remember(installRoot) {
+                        logUnexpectedExceptions(launcherFolder, "scanning for games") { scanGames(installRoot) }
+                            .also { r ->
+                                when (r) {
+                                    is ScanResult.NotAHypseusInstall -> log(launcherFolder, "Not a hypseus installation: ${r.checkedPath}")
+                                    is ScanResult.Found -> log(launcherFolder, "Found ${r.games.size} game(s)")
+                                }
+                            }
+                    }) {
                         is ScanResult.NotAHypseusInstall -> Text(
                             "Not inside a hypseus installation: ${result.checkedPath}",
                             modifier = Modifier.padding(16.dp),
@@ -381,6 +415,17 @@ private fun GameCarousel(
 
     fun launchAndTrack(game: Game) {
         val result = launchGame(game, installRoot, extraArgsFor(game))
+        // #94 follow-up, real live feedback: a successful launch isn't
+        // logged here - hypseus itself already writes its own real logs
+        // for the actual game session (#6's own non-goal: that's the
+        // engine writing, not the launcher, and the launcher leaves them
+        // alone entirely). hypseus.exe not found IS still worth logging
+        // here specifically - hypseus never even runs in that case, so
+        // its own logs can't help at all; this is the one launch outcome
+        // only the launcher itself can capture.
+        if (result is LaunchResult.HypseusNotFound) {
+            log(launcherFolder, "Launch failed for ${game.name}: hypseus.exe not found at ${result.expectedPath}")
+        }
         if (result is LaunchResult.Started) {
             isGameRunning = true
             coroutineScope.launch {
