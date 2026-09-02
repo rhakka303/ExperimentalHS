@@ -1,3 +1,4 @@
+import java.io.File
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import org.lwjgl.glfw.GLFW
@@ -140,7 +141,7 @@ private fun captureStickDirection(x: Float, y: Float, tokenPrefix: String): Stri
     return if (x < 0) "${tokenPrefix}_LEFT" else "${tokenPrefix}_RIGHT"
 }
 
-fun startGamepadInput() {
+fun startGamepadInput(launcherFolder: File?) {
     Thread {
         try {
             if (!GLFW.glfwInit()) return@Thread
@@ -238,6 +239,12 @@ fun startGamepadInput() {
             // run, same as if no controller were ever connected. Not
             // rethrown: a background input thread dying is not a reason
             // to take the rest of the app down with it.
+            //
+            // #94 closes the actual visibility gap this comment
+            // describes: the exception is now logged (message + full
+            // stack trace) before being swallowed, so it's captured for
+            // a support request instead of vanishing without a trace.
+            log(launcherFolder, "Gamepad input thread crashed: ${e.stackTraceToString()}")
         }
     }.apply {
         isDaemon = true
