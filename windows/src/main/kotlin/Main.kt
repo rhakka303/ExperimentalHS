@@ -245,7 +245,7 @@ private fun HypdroidApp(
             onModeChanged = { controlsMode = it },
             onBack = { screen = Screen.Settings },
         )
-        is Screen.About -> BlankPlaceholderScreen("About", onBack = { screen = Screen.Settings })
+        is Screen.About -> AboutScreen(onBack = { screen = Screen.Settings })
         is Screen.Export -> ExportScreen(
             games = games,
             installRoot = installRoot,
@@ -461,11 +461,13 @@ private fun GameCarousel(
         }
     }
 
-    // #57 - real Hypdroid logo, the actual Android asset
-    // (android/app/src/main/res/drawable/hypdroid_logo.png), copied in as
-    // a plain classpath resource rather than wiring up Compose's full
-    // resources system for one static image - see this story's own issue
-    // for the tradeoff. Loaded once, not per-recomposition.
+    // #57 - real logo, loaded as a plain classpath resource rather than
+    // wiring up Compose's full resources system for one static image -
+    // see this story's own issue for the tradeoff. #91 swapped the
+    // underlying asset from the original Android "Hypdroid" wordmark to
+    // this app's own "Hypdroid Desktop" wordmark (same filename, same
+    // loading path, just a different PNG). Loaded once, not per-
+    // recomposition.
     val logoBitmap = remember { loadHypdroidLogo() }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -700,14 +702,16 @@ private fun GameCarousel(
     }
 }
 
-// #57 - loads the real Hypdroid logo from a plain classpath resource
-// (windows/src/main/resources/hypdroid_logo.png, copied in from the real
-// Android asset). This genuinely is the compile-time bundled-asset case
+// #57 - loads the real logo from a plain classpath resource
+// (windows/src/main/resources/hypdroid_logo.png - #91 swapped this to
+// the app's own "Hypdroid Desktop" wordmark, was originally the Android
+// asset). This genuinely is the compile-time bundled-asset case
 // loadImageBitmap's own deprecation warning targets (unlike GameCard's
 // runtime media/ files below) - the simpler classpath-resource path was
 // a deliberate choice over wiring up Compose's full resources system for
 // one static image, not an oversight. Returns null (silently, no crash)
 // if the resource is ever missing - the top bar simply omits the logo.
+// #91 - also reused for the About screen's own logo, same function.
 @Suppress("DEPRECATION")
 private fun loadHypdroidLogo(): ImageBitmap? =
     try {
@@ -2771,38 +2775,43 @@ private fun TokenPickerDialog(title: String, options: List<String>, onSelect: (S
 // off a grid edge stays put rather than wrapping, matching how #72's
 // CarouselFocus movement already behaves (Up from CARDS does nothing
 // further once GEAR is reached, not cycle back around).
-// #20 - EXPORT is a 3rd row's left cell; its own right cell is a plain
-// unfocusable placeholder card (matching GameHackScreen's identical
-// blank-second-card precedent), so it has no SettingsFocus value of its
-// own - moveDown/moveRight below simply have no transition off the
-// right column's bottom edge or off EXPORT's own right edge, same "edges
-// stay put, no wraparound" rule #73 already established for the first
-// two rows.
+// #20 - EXPORT (now #91: ABOUT) is a 3rd row's left cell; its own right
+// cell is a plain unfocusable placeholder card (matching
+// GameHackScreen's identical blank-second-card precedent), so it has no
+// transition to a 3rd-row right-side value - moveDown/moveRight below
+// simply have no transition off the right column's bottom edge or off
+// that cell's own right edge, same "edges stay put, no wraparound" rule
+// #73 already established for the first two rows.
+//
+// #91 - ABOUT and EXPORT swapped physical positions (About moved to row
+// 3, Export took About's old row-2 spot) - this topology reflects the
+// new layout, not the enum's own declaration order (which is otherwise
+// unrelated to grid position).
 private enum class SettingsFocus { APP_SETTINGS, CONTROLS, ABOUT, VIDEO_SETTINGS, EXPORT }
 
 private fun SettingsFocus.moveUp(): SettingsFocus = when (this) {
-    SettingsFocus.ABOUT -> SettingsFocus.APP_SETTINGS
+    SettingsFocus.EXPORT -> SettingsFocus.APP_SETTINGS
     SettingsFocus.VIDEO_SETTINGS -> SettingsFocus.CONTROLS
-    SettingsFocus.EXPORT -> SettingsFocus.ABOUT
+    SettingsFocus.ABOUT -> SettingsFocus.EXPORT
     else -> this
 }
 
 private fun SettingsFocus.moveDown(): SettingsFocus = when (this) {
-    SettingsFocus.APP_SETTINGS -> SettingsFocus.ABOUT
+    SettingsFocus.APP_SETTINGS -> SettingsFocus.EXPORT
     SettingsFocus.CONTROLS -> SettingsFocus.VIDEO_SETTINGS
-    SettingsFocus.ABOUT -> SettingsFocus.EXPORT
+    SettingsFocus.EXPORT -> SettingsFocus.ABOUT
     else -> this
 }
 
 private fun SettingsFocus.moveLeft(): SettingsFocus = when (this) {
     SettingsFocus.CONTROLS -> SettingsFocus.APP_SETTINGS
-    SettingsFocus.VIDEO_SETTINGS -> SettingsFocus.ABOUT
+    SettingsFocus.VIDEO_SETTINGS -> SettingsFocus.EXPORT
     else -> this
 }
 
 private fun SettingsFocus.moveRight(): SettingsFocus = when (this) {
     SettingsFocus.APP_SETTINGS -> SettingsFocus.CONTROLS
-    SettingsFocus.ABOUT -> SettingsFocus.VIDEO_SETTINGS
+    SettingsFocus.EXPORT -> SettingsFocus.VIDEO_SETTINGS
     else -> this
 }
 
@@ -2917,12 +2926,12 @@ private fun SettingsScreen(
         }
         Spacer(modifier = Modifier.height(12.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            SettingsCard("About", "Build info, credits, open source", Modifier.weight(1f), focus == SettingsFocus.ABOUT, { focus = SettingsFocus.ABOUT }, onOpenAbout)
+            SettingsCard("Export", "Create standalone .bat files", Modifier.weight(1f), focus == SettingsFocus.EXPORT, { focus = SettingsFocus.EXPORT }, onOpenExport)
             SettingsCard("Video Settings", "Aspect ratio, full screen mode", Modifier.weight(1f), focus == SettingsFocus.VIDEO_SETTINGS, { focus = SettingsFocus.VIDEO_SETTINGS }, onOpenVideoSettings)
         }
         Spacer(modifier = Modifier.height(12.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            SettingsCard("Export", "Create standalone .bat files", Modifier.weight(1f), focus == SettingsFocus.EXPORT, { focus = SettingsFocus.EXPORT }, onOpenExport)
+            SettingsCard("About", "Build info, credits, open source", Modifier.weight(1f), focus == SettingsFocus.ABOUT, { focus = SettingsFocus.ABOUT }, onOpenAbout)
             // Blank/TBD, matching GameHackScreen's own identical
             // blank-second-card precedent - not a SettingsCard, no focus
             // stop, purely a visual placeholder.
@@ -2963,14 +2972,19 @@ private fun SettingsCard(title: String, subtitle: String, modifier: Modifier, is
 }
 
 /**
- * #24 - a genuinely empty destination, shared by all
- * four Settings cards above. Just a header and Back/Escape, matching the
- * same navigation shell every other screen already uses.
+ * #91 - real content on day one, not the #24 blank stub this replaces:
+ * the app's own logo, its version (matching Hypdroid's own current
+ * versioning, 5.0 - not this launcher's own separate release history,
+ * since it isn't cut releases of its own yet), and a credit line for
+ * the one real thing this app launches - Hypseus Singe by DirtBagXon,
+ * GPL-3.0.
  */
 @Composable
-private fun BlankPlaceholderScreen(title: String, onBack: () -> Unit) {
-    val focusRequester = remember(title) { FocusRequester() }
-    var hasRequestedInitialFocus by remember(title) { mutableStateOf(false) }
+private fun AboutScreen(onBack: () -> Unit) {
+    val logoBitmap = remember { loadHypdroidLogo() }
+
+    val focusRequester = remember { FocusRequester() }
+    var hasRequestedInitialFocus by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -3002,7 +3016,29 @@ private fun BlankPlaceholderScreen(title: String, onBack: () -> Unit) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
             }
             Spacer(modifier = Modifier.width(8.dp))
-            Text(title, style = MaterialTheme.typography.titleLarge)
+            Text("About", style = MaterialTheme.typography.titleLarge)
+        }
+
+        Spacer(modifier = Modifier.height(48.dp))
+
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            if (logoBitmap != null) {
+                Image(
+                    bitmap = logoBitmap,
+                    contentDescription = "Hypdroid Desktop",
+                    modifier = Modifier.height(120.dp),
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+            Text("Version 5.0", style = MaterialTheme.typography.titleMedium)
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                "Launches Hypseus Singe by DirtBagXon (GPL-3.0)",
+                style = MaterialTheme.typography.bodyMedium,
+            )
         }
     }
 }
