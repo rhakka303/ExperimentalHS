@@ -461,8 +461,19 @@ private fun GameCarousel(
         }
     }
 
+    // #97 - real, live-found bug: pageLeft()/pageRight() kick off an
+    // *animated* scroll (pagerState.animateScrollToPage()) on a
+    // background coroutine, not an instant snap. Reading currentPage
+    // here could catch it mid-flight, still showing the old page, so a
+    // quick Left/Right then launch/options could act on the wrong game.
+    // settledPage only updates once the pager has actually come to
+    // rest, so it can never read an in-flight, ambiguous value -
+    // "confirm/open whatever's actually settled," not "whatever I just
+    // requested." pageLeft()/pageRight()'s own target math keeps using
+    // currentPage - that's about responsive navigation, not this
+    // decision.
     fun launchCentered() {
-        launchAndTrack(games[pagerState.currentPage])
+        launchAndTrack(games[pagerState.settledPage])
     }
 
     fun moveFocusUp() {
@@ -476,7 +487,10 @@ private fun GameCarousel(
     // "down" action.
     fun handleDown() {
         when (carouselFocus) {
-            CarouselFocus.CARDS -> onOpenOptions(games[pagerState.currentPage])
+            // #97 - same settledPage fix as launchCentered() above, same
+            // reason: opening Options mid-scroll could otherwise act on
+            // the wrong game.
+            CarouselFocus.CARDS -> onOpenOptions(games[pagerState.settledPage])
             CarouselFocus.GEAR -> carouselFocus = CarouselFocus.CARDS
         }
     }
