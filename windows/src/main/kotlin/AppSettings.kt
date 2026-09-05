@@ -19,10 +19,13 @@ import kotlinx.serialization.json.Json
  * moved its UI to a new VideoSettingsScreen, but the field itself stays
  * here unchanged - purely a UI relocation, not a storage change.
  *
- * fullscreenEnabled (#43): controls the *launcher's own window*, not a
- * hypseus launch arg - a different category from every other field here.
- * Default false (windowed, and specifically WindowPlacement.Maximized -
- * see main()'s own comment for why that fix belongs there, not here).
+ * fullscreenEnabled (#43): used to control the *launcher's own window*
+ * (App Full Screen) - #102 removed that feature entirely after three
+ * real bugs in the same AWT/Skiko transition code (#43, #45, #101), so
+ * this field is no longer read for window-state purposes. Kept, not
+ * deleted, matching #87's own "keep the field, drop the behavior"
+ * pattern - an existing app_settings.json with this set still loads
+ * without error, it just has no effect now.
  *
  * gamepadEnabled (#46): back to a plain launch-arg flag, same category
  * as preserveAspectRatioEnabled - appends -gamepad (confirmed real,
