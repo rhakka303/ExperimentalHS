@@ -128,15 +128,11 @@ private sealed interface Screen {
  * options screen, the Game Hacks screen, and navigation between all three.
  *
  * #43 - launcherFolder is resolved here, before Window() rather than
- * inside its content, specifically so the initial AppSettings load (and
- * therefore the initial WindowState.placement) is known before the
- * window is ever shown - avoids a windowed-then-fullscreen flash on
- * startup. windowState itself is created here and threaded down to
- * VideoSettingsScreen (to react to the Full Screen toggle) and
- * GameCarousel (to know whether Full Screen is on, for the X close icon
- * and Escape-quits behavior) - the first piece of state in this project
- * that needs to reach both the top-level Window and deep into the
- * composable tree at once.
+ * inside its content, specifically so the initial AppSettings load is
+ * known before the window is ever shown. windowState itself is created
+ * here purely for Window()'s own use (always Maximized - see #102) -
+ * it no longer needs to be threaded anywhere else now that App Full
+ * Screen is gone.
  */
 fun main() = application {
     val launcherFolder = remember { resolveLauncherFolder() }
@@ -150,18 +146,24 @@ fun main() = application {
     // app's whole lifetime - individual screens react to it (or don't)
     // via GamepadInputBus, per their own LaunchedEffect.
     remember(Unit) { startGamepadInput(launcherFolder) }
-    val initialFullscreenEnabled = remember(launcherFolder) {
-        launcherFolder?.let { loadAppSettings(it).fullscreenEnabled } ?: false
-    }
     // #43 - windowed mode always launches maximized, never minimized:
     // the app was observed launching minimized in practice, which turned
     // out to be nothing more than the OS/JVM default for a Window with
     // no explicit WindowState at all - not a deliberate choice anywhere
     // in this code. Passing a real WindowState here is the actual fix,
     // not a workaround.
-    val windowState = rememberWindowState(
-        placement = if (initialFullscreenEnabled) WindowPlacement.Fullscreen else WindowPlacement.Maximized,
-    )
+    //
+    // #102 - always Maximized now, never Fullscreen: App Full Screen
+    // (the launcher's own window fullscreen toggle) is removed entirely
+    // - three real bugs in the same small chunk of transition code
+    // (#43's original stuck-fullscreen issue, #45's reverted
+    // regression, #101's regression) was enough evidence this AWT/Skiko
+    // transition just doesn't work reliably on this stack. An existing
+    // saved app_settings.json with fullscreenEnabled=true from before
+    // this removal is simply not read for window-state purposes
+    // anymore - the field stays on AppSettings so the file itself still
+    // loads without breaking, it just has no effect now.
+    val windowState = rememberWindowState(placement = WindowPlacement.Maximized)
 
     Window(onCloseRequest = ::exitApplication, title = "HypdroidDesktop", state = windowState) {
         MaterialTheme(colorScheme = HypdroidColorScheme) {
@@ -218,7 +220,6 @@ fun main() = application {
                                 installRoot = installRoot,
                                 launcherFolder = launcherFolder,
                                 windowState = windowState,
-                                onQuit = ::exitApplication,
                             )
                         }
                     }
@@ -234,7 +235,6 @@ private fun HypdroidApp(
     installRoot: File,
     launcherFolder: File?,
     windowState: WindowState,
-    onQuit: () -> Unit,
 ) {
     // #19 - lifted out of GameCarousel so the pager's position survives a
     // trip to another screen and back ("Back returns to the carousel, on
@@ -257,11 +257,11 @@ private fun HypdroidApp(
             games = games,
             installRoot = installRoot,
             launcherFolder = launcherFolder,
+            windowState = windowState,
             initialPage = carouselPage,
             onPageChanged = { carouselPage = it },
             onOpenOptions = { screen = Screen.GameOptionsFor(it) },
             onOpenSettings = { screen = Screen.Settings },
-            onQuit = onQuit,
         )
         is Screen.Settings -> SettingsScreen(
             onOpenAppSettings = { screen = Screen.AppSettings },
@@ -274,7 +274,6 @@ private fun HypdroidApp(
         is Screen.AppSettings -> AppSettingsScreen(launcherFolder = launcherFolder, onBack = { screen = Screen.Settings })
         is Screen.VideoSettings -> VideoSettingsScreen(
             launcherFolder = launcherFolder,
-            windowState = windowState,
             onBack = { screen = Screen.Settings },
         )
         is Screen.Controls -> ControlsScreen(
@@ -336,11 +335,11 @@ private fun GameCarousel(
     games: List<Game>,
     installRoot: File,
     launcherFolder: File?,
+    windowState: WindowState,
     initialPage: Int,
     onPageChanged: (Int) -> Unit,
     onOpenOptions: (Game) -> Unit,
     onOpenSettings: () -> Unit,
-    onQuit: () -> Unit,
 ) {
     val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { games.size })
     val coroutineScope = rememberCoroutineScope()
@@ -466,6 +465,28 @@ private fun GameCarousel(
         }
         if (result is LaunchResult.Started) {
             isGameRunning = true
+            // #101 - real, live-found need: even with #99's double-launch
+            // guard, a second click during that same double-click still
+            // re-raises/focuses the launcher's own window at the OS
+            // level (any click on a window activates it, independent of
+            // what the app's own click handler does) - hypseus could end
+            // up running behind the launcher instead of in front of it.
+            // Minimizing removes the launcher as a visible, focusable
+            // target entirely while a game runs, so there's nothing left
+            // for a stray click to land on.
+            //
+            // This does NOT touch windowState.placement at all, only
+            // isMinimized - deliberately the simpler of the two, unlike
+            // #43/#45's own Fullscreen-exit dance (Floating -> delay ->
+            // isMinimized=false -> Maximized), which existed because
+            // *changing* placement away from Fullscreen was the fragile
+            // part. Here placement itself never changes - so restoring
+            // is just isMinimized=false, not a placement transition.
+            // #45's own regression was specifically in that transition,
+            // not in isMinimized toggling itself - and #102 removed
+            // Fullscreen placement from this app entirely, so that
+            // transition can no longer happen at all now.
+            windowState.isMinimized = true
             coroutineScope.launch {
                 try {
                     withContext(Dispatchers.IO) { result.process.waitFor() }
@@ -473,6 +494,7 @@ private fun GameCarousel(
                     // fall through - isGameRunning still needs clearing
                 }
                 isGameRunning = false
+                windowState.isMinimized = false
             }
         }
     }
@@ -620,11 +642,12 @@ private fun GameCarousel(
                 // real reasoning here exactly. Default theme color the
                 // rest of the time, against the plain background.
                 val iconTint = if (backgroundBitmap != null) Color.White else LocalContentColor.current
-                if (appSettings.fullscreenEnabled) {
-                    IconButton(onClick = onQuit) {
-                        Icon(Icons.Filled.Close, contentDescription = "Quit", tint = iconTint)
-                    }
-                }
+                // #102 - the X/quit icon existed specifically because
+                // real Fullscreen mode has no OS window chrome to close
+                // from. Removed along with App Full Screen itself - the
+                // launcher always runs Maximized/windowed now, where the
+                // OS's own titlebar close button already does this job,
+                // same as every other windowed app.
                 // #76 follow-up - IconButton already has its own real
                 // circular hover/press state layer; see
                 // rememberFocusInteractionSource's own doc comment for
@@ -718,23 +741,12 @@ private fun GameCarousel(
                                     if (carouselFocus == CarouselFocus.CARDS) pageRight()
                                     true
                                 }
-                                // #43 - carousel/home screen only: every
-                                // other screen keeps its own existing
-                                // Escape-to-back behavior untouched. Only
-                                // quits while Full Screen is on - off
-                                // means windowed mode, where Escape on the
-                                // carousel does nothing (there's no back
-                                // destination from the home screen),
-                                // matching the owner's own description
-                                // exactly.
-                                Key.Escape -> {
-                                    if (appSettings.fullscreenEnabled) {
-                                        onQuit()
-                                        true
-                                    } else {
-                                        false
-                                    }
-                                }
+                                // #102 - Escape-quits-in-fullscreen removed
+                                // along with App Full Screen itself: the
+                                // carousel is the home screen (no back
+                                // destination), and Escape here now does
+                                // nothing, same as it always did in
+                                // windowed mode.
                                 else -> false
                             }
                         },
@@ -2159,34 +2171,28 @@ private fun AppSettingsScreen(launcherFolder: File?, onBack: () -> Unit) {
 /**
  * #43 - real content on day one, not a blank stub: Preserve Video Aspect
  * Ratio (relocated verbatim from AppSettingsScreen, including #32's
- * version-risk caption) plus a new Full Screen toggle.
+ * version-risk caption) plus Game Full Screen (the game's own window,
+ * a real hypseus launch arg - see AppSettings.gameFullscreenEnabled).
  *
- * Full Screen is a genuinely different category of setting from every
- * other toggle in this app - it controls the *launcher's own window*
- * (windowState, threaded all the way down from main()), not a hypseus
- * launch arg or a plain persisted value nothing else reads live. Flipping
- * it mutates windowState.placement directly, in addition to persisting
- * fullscreenEnabled - the persisted value is what main() reads on the
- * *next* launch (see its own comment), not what drives the *current*
- * window, which windowState.placement already does live via Window's own
- * observation of it.
+ * #102 - App Full Screen (the launcher's own window) used to live here
+ * too, mutating windowState.placement directly - removed entirely after
+ * three real bugs in the same small chunk of AWT/Skiko transition code
+ * (#43, #45, #101). This screen no longer needs a WindowState at all.
  */
 // #76 - same flat-list model as AppSettingsControl, simpler here: both
 // controls are always visible, no conditional entries.
-// #20 follow-up - GAME_FULL_SCREEN_SWITCH is a real, live-found gap:
-// -fullscreen (the hypseus arg that puts the game itself full screen)
-// used to be hardcoded unconditionally rather than a real setting - see
-// AppSettings.gameFullscreenEnabled's own doc comment. FULL_SCREEN_SWITCH
-// (App Full Screen) is a genuinely different thing - this launcher's own
-// window, not the game.
-private enum class VideoSettingsControl { PRESERVE_ASPECT_RATIO_SWITCH, FULL_SCREEN_SWITCH, GAME_FULL_SCREEN_SWITCH }
+// #102 - FULL_SCREEN_SWITCH (App Full Screen, this launcher's own
+// window) removed entirely - see AppSettings.fullscreenEnabled's own
+// doc comment for why. GAME_FULL_SCREEN_SWITCH is unrelated and
+// unaffected - a real hypseus launch argument for the game's own
+// window, not this launcher's.
+private enum class VideoSettingsControl { PRESERVE_ASPECT_RATIO_SWITCH, GAME_FULL_SCREEN_SWITCH }
 
 @Composable
-private fun VideoSettingsScreen(launcherFolder: File?, windowState: WindowState, onBack: () -> Unit) {
+private fun VideoSettingsScreen(launcherFolder: File?, onBack: () -> Unit) {
     var settings by remember {
         mutableStateOf(if (launcherFolder != null) loadAppSettings(launcherFolder) else AppSettings())
     }
-    val coroutineScope = rememberCoroutineScope()
 
     // #76 - same flat-list model as AppSettingsScreen, simpler here: both
     // controls are always visible, no conditional items and no nested
@@ -2212,37 +2218,10 @@ private fun VideoSettingsScreen(launcherFolder: File?, windowState: WindowState,
         if (launcherFolder != null) saveAppSettings(launcherFolder, updated)
     }
 
-    // Real, observed bugs working through this live: going straight from
-    // WindowPlacement.Fullscreen to Maximized left the window stuck
-    // fullscreen. Splitting the transition through Floating first (with a
-    // delay) got further, but landed on minimized instead - AWT's
-    // iconified bit apparently gets set somewhere during the fullscreen
-    // exit and doesn't clear on its own. isMinimized = false is set
-    // explicitly, in the same coroutine, before the final Maximized
-    // assignment, specifically to clear that bit rather than trusting the
-    // Floating step to have already done it.
-    fun setFullscreen(enabled: Boolean) {
-        if (enabled) {
-            windowState.placement = WindowPlacement.Fullscreen
-        } else {
-            coroutineScope.launch {
-                windowState.placement = WindowPlacement.Floating
-                delay(100)
-                windowState.isMinimized = false
-                windowState.placement = WindowPlacement.Maximized
-            }
-        }
-    }
-
     fun activateFocused() {
         when (currentFocusedControl) {
             VideoSettingsControl.PRESERVE_ASPECT_RATIO_SWITCH ->
                 persist(settings.copy(preserveAspectRatioEnabled = !settings.preserveAspectRatioEnabled))
-            VideoSettingsControl.FULL_SCREEN_SWITCH -> {
-                val enabled = !settings.fullscreenEnabled
-                persist(settings.copy(fullscreenEnabled = enabled))
-                setFullscreen(enabled)
-            }
             VideoSettingsControl.GAME_FULL_SCREEN_SWITCH ->
                 persist(settings.copy(gameFullscreenEnabled = !settings.gameFullscreenEnabled))
             null -> Unit
@@ -2341,45 +2320,13 @@ private fun VideoSettingsScreen(launcherFolder: File?, windowState: WindowState,
                 }
             }
 
+            // #102 - App Full Screen used to live in this slot, removed
+            // entirely. Left blank rather than moving Game Full Screen up
+            // into it - matching this same function's own precedent for a
+            // blank second card (and GameHackScreen's identical one) when
+            // only one real control remains for a row.
             OutlinedCard(modifier = Modifier.weight(1f)) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            // #20 follow-up - renamed from "Full Screen":
-                            // this toggles the launcher's own window, not
-                            // the game - see GAME_FULL_SCREEN_SWITCH's own
-                            // card below for that.
-                            Text("App Full Screen", style = MaterialTheme.typography.titleMedium)
-                            Text(
-                                "On: full screen. Off: windowed mode.",
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                            // #65 - real, known, currently-unresolved
-                            // issue (#45): the launcher can stay hidden on
-                            // the taskbar after exiting a game in Full
-                            // Screen mode. Two fix attempts were reverted
-                            // (one caused a worse regression - see #45's
-                            // own comments), so this is flagged visibly
-                            // rather than presented as fully solid.
-                            Text(
-                                "Experimental: May hide on taskbar after exiting game",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error,
-                            )
-                        }
-                        Switch(
-                            checked = settings.fullscreenEnabled,
-                            onCheckedChange = { enabled ->
-                                persist(settings.copy(fullscreenEnabled = enabled))
-                                setFullscreen(enabled)
-                            },
-                            interactionSource = rememberFocusInteractionSource(
-                                isFocused = focusedControl == VideoSettingsControl.FULL_SCREEN_SWITCH,
-                                onRealHover = { focusIndex = controls.indexOf(VideoSettingsControl.FULL_SCREEN_SWITCH) },
-                            ),
-                        )
-                    }
-                }
+                Column(modifier = Modifier.padding(12.dp).fillMaxWidth()) {}
             }
         }
 
@@ -2387,8 +2334,8 @@ private fun VideoSettingsScreen(launcherFolder: File?, windowState: WindowState,
 
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             // #20 follow-up - real, live-found gap: -fullscreen (the game
-            // itself, not this launcher's own window - see App Full
-            // Screen above) was hardcoded unconditionally in LaunchArgs.kt
+            // itself, not this launcher's own window, which #102 removed
+            // entirely) was hardcoded unconditionally in LaunchArgs.kt
             // instead of being a real setting. Same live launcher +
             // exported .bat reach as every other flag here (see
             // AppSettings.gameFullscreenEnabled's own doc comment).
@@ -2413,9 +2360,6 @@ private fun VideoSettingsScreen(launcherFolder: File?, windowState: WindowState,
                     }
                 }
             }
-            // Blank/TBD, matching GameHackScreen's own identical
-            // blank-second-card precedent - every card row in this app
-            // pairs two, per the owner's own correction here.
             OutlinedCard(modifier = Modifier.weight(1f)) {
                 Column(modifier = Modifier.padding(12.dp).fillMaxWidth()) {}
             }
