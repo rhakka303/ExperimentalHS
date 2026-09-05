@@ -82,6 +82,18 @@ compose.desktop {
             // on the first real prototype run, since nothing else in this
             // app uses that module for jlink to have detected it.
             modules("jdk.unsupported")
+
+            // Real, live-found gap: without this, jpackage falls back to
+            // its own default generic icon for both the built .exe (seen
+            // in Explorer) and the window titlebar/taskbar - nothing here
+            // pulls in the Hypdroid Desktop branding at all otherwise.
+            // icon.ico is a multi-resolution (16/32/48/256) icon built
+            // from the disc emblem alone (ic_launcher.png), not the full
+            // wordmark logo used elsewhere in the app - a wordmark is far
+            // too wide/short to read at 16x16/32x32 taskbar sizes.
+            windows {
+                iconFile.set(project.file("icon.ico"))
+            }
         }
     }
 }
