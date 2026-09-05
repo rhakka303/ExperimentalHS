@@ -421,9 +421,18 @@ private fun GameCarousel(
     // launched game's process is still alive - tracked the same real way
     // the reverted #45 attempt did (Process.waitFor() on Dispatchers.IO),
     // but only ever touching this plain boolean, never windowState, which
-    // is what made that attempt risky. Keyboard/mouse never needed this:
-    // hypseus's own window naturally has focus during play, so the
-    // carousel's onKeyEvent/onClick simply never fire during that time.
+    // is what made that attempt risky.
+    //
+    // #99 correction, real live finding: the doc comment here used to
+    // claim keyboard/mouse never needed this guard, since hypseus's own
+    // window naturally has focus during play. That's true once hypseus
+    // has actually spawned a window - it doesn't cover a double-click
+    // (a real, common instinct - it's the standard Windows convention
+    // for "open"), where both clicks land before hypseus has had any
+    // chance to start, let alone steal focus. launchAndTrack() itself
+    // now guards on isGameRunning too, so every input path (mouse,
+    // keyboard Enter, gamepad LAUNCH) is protected the same way, not
+    // just gamepad.
     var isGameRunning by remember { mutableStateOf(false) }
 
     // #72 - real focus model: input either targets the game cards or the
@@ -436,6 +445,13 @@ private fun GameCarousel(
     var carouselFocus by remember { mutableStateOf(CarouselFocus.CARDS) }
 
     fun launchAndTrack(game: Game) {
+        // #99 - a double-click (or any second call while a previous
+        // session's process is still alive) must never start a second
+        // concurrent hypseus.exe - guarded here, the one shared function
+        // every input path already routes through, rather than patching
+        // each call site (card onClick, keyboard Enter, gamepad LAUNCH)
+        // separately.
+        if (isGameRunning) return
         val result = launchGame(game, installRoot, extraArgsFor(game))
         // #94 follow-up, real live feedback: a successful launch isn't
         // logged here - hypseus itself already writes its own real logs
