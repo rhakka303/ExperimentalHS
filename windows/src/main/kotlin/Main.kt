@@ -68,6 +68,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -164,8 +165,17 @@ fun main() = application {
     // anymore - the field stays on AppSettings so the file itself still
     // loads without breaking, it just has no effect now.
     val windowState = rememberWindowState(placement = WindowPlacement.Maximized)
+    // #104 - see loadAppIcon()'s own comment: this is the titlebar/
+    // taskbar icon for the *running* window, a separate thing from the
+    // built .exe's own embedded icon (build.gradle.kts's iconFile).
+    val appIcon = remember { loadAppIcon() }
 
-    Window(onCloseRequest = ::exitApplication, title = "HypdroidDesktop", state = windowState) {
+    Window(
+        onCloseRequest = ::exitApplication,
+        title = "HypdroidDesktop",
+        state = windowState,
+        icon = appIcon?.let { BitmapPainter(it) },
+    ) {
         MaterialTheme(colorScheme = HypdroidColorScheme) {
             Surface(modifier = Modifier.fillMaxSize()) {
                 // #94 - logUnexpectedExceptions wraps these two real I/O
@@ -825,6 +835,20 @@ private fun GameCarousel(
 private fun loadHypdroidLogo(): ImageBitmap? =
     try {
         object {}.javaClass.getResourceAsStream("/hypdroid_logo.png")?.buffered()?.use(::loadImageBitmap)
+    } catch (e: IOException) {
+        null
+    }
+
+// #104 - the window's own titlebar/taskbar icon (Window()'s `icon`
+// param, an AWT-level thing) is entirely separate from the built .exe's
+// embedded Win32 resource icon (build.gradle.kts's iconFile) - setting
+// one does not set the other. app_icon.png is the disc emblem alone,
+// same square asset icon.ico was built from - not hypdroid_logo.png's
+// wordmark, which is far too wide/short to read at titlebar size.
+@Suppress("DEPRECATION")
+private fun loadAppIcon(): ImageBitmap? =
+    try {
+        object {}.javaClass.getResourceAsStream("/app_icon.png")?.buffered()?.use(::loadImageBitmap)
     } catch (e: IOException) {
         null
     }
