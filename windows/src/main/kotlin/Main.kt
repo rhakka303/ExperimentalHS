@@ -88,6 +88,7 @@ import androidx.compose.ui.window.rememberWindowState
 import java.io.File
 import java.io.IOException
 import kotlin.math.absoluteValue
+import kotlin.system.exitProcess
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -125,6 +126,19 @@ private sealed interface Screen {
 }
 
 /**
+ * #106 - `--game <name>` runs headless (see HeadlessLaunch.kt) and exits
+ * with the game's exit code, never opening a window. Anything else starts
+ * the normal UI exactly as before.
+ */
+fun main(args: Array<String>) {
+    val gameToken = headlessGameArgument(args)
+    if (gameToken != null) {
+        exitProcess(runHeadless(gameToken, resolveInstallRoot(), resolveLauncherFolder()))
+    }
+    runUi()
+}
+
+/**
  * #17 - carousel UI, replacing #11's plain list. #19 adds the per-game
  * options screen, the Game Hacks screen, and navigation between all three.
  *
@@ -134,8 +148,11 @@ private sealed interface Screen {
  * here purely for Window()'s own use (always Maximized - see #102) -
  * it no longer needs to be threaded anywhere else now that App Full
  * Screen is gone.
+ *
+ * #106 - was `main()` itself; renamed so the real main() below can hand
+ * off to headless mode first, before any of this starts.
  */
-fun main() = application {
+private fun runUi() = application {
     val launcherFolder = remember { resolveLauncherFolder() }
     // #94 - first real log line of every session, matching what
     // resolveLauncherFolder()'s own doc comment says about when this is
@@ -400,17 +417,11 @@ private fun GameCarousel(
     // #32/#46 - preserveAspectRatioEnabled/gamepadEnabled are app-level
     // (#31), not per-game; launchArgumentsFor slots them into the right
     // position in the argv.
+    //
+    // #106 - the logic itself moved to extraLaunchArgsFor() (Launcher.kt)
+    // so headless mode builds the exact same list.
     fun extraArgsFor(game: Game): List<String> =
-        launcherFolder?.let {
-            launchArgumentsFor(
-                installRoot,
-                loadOptions(it, game.name),
-                game.name,
-                appSettings.preserveAspectRatioEnabled,
-                appSettings.gamepadEnabled,
-                appSettings.gameFullscreenEnabled,
-            )
-        } ?: emptyList()
+        extraLaunchArgsFor(installRoot, launcherFolder, appSettings, game)
 
     fun pageLeft() {
         val target = pagerState.currentPage - 1

@@ -24,8 +24,18 @@ sealed interface LaunchResult {
  * appended, matching Android's MainActivity.kt (~line 396) exactly: a
  * saved entry can itself be a multi-token string (e.g. "-scalefactor
  * 50"), not necessarily one argv token per entry.
+ *
+ * #106 - discardOutput is for the headless path only, which waits on the
+ * process for the whole session: an unread stdout/stderr pipe eventually
+ * fills and would block hypseus mid-game. Defaults to false so the UI
+ * path's behavior is untouched.
  */
-fun launchGame(game: Game, installRoot: File, extraArguments: List<String> = emptyList()): LaunchResult {
+fun launchGame(
+    game: Game,
+    installRoot: File,
+    extraArguments: List<String> = emptyList(),
+    discardOutput: Boolean = false,
+): LaunchResult {
     val hypseusExe = File(installRoot, "hypseus.exe")
     if (!hypseusExe.isFile) {
         return LaunchResult.HypseusNotFound(hypseusExe)
@@ -33,9 +43,37 @@ fun launchGame(game: Game, installRoot: File, extraArguments: List<String> = emp
 
     val args = buildLaunchArgs(game, installRoot) +
         extraArguments.flatMap { it.trim().split(Regex("\\s+")).filter { token -> token.isNotEmpty() } }
-    val process = ProcessBuilder(listOf(hypseusExe.path) + args)
+    val builder = ProcessBuilder(listOf(hypseusExe.path) + args)
         .directory(installRoot)
-        .start()
+    if (discardOutput) {
+        builder.redirectOutput(ProcessBuilder.Redirect.DISCARD)
+        builder.redirectError(ProcessBuilder.Redirect.DISCARD)
+    }
 
-    return LaunchResult.Started(process)
+    return LaunchResult.Started(builder.start())
 }
+
+/**
+ * #106 - the extra-argument list for a game's launch, shared by the UI
+ * (Main.kt) and the headless path (HeadlessLaunch.kt) so the two can never
+ * drift apart. Both read the saved per-game options and app settings from
+ * disk at the moment of launch. launcherFolder is only non-null for the
+ * packaged app (resolveLauncherFolder()); without it there is nowhere to
+ * read saved options from, so no extra arguments.
+ */
+fun extraLaunchArgsFor(
+    installRoot: File,
+    launcherFolder: File?,
+    appSettings: AppSettings,
+    game: Game,
+): List<String> =
+    launcherFolder?.let {
+        launchArgumentsFor(
+            installRoot,
+            loadOptions(it, game.name),
+            game.name,
+            appSettings.preserveAspectRatioEnabled,
+            appSettings.gamepadEnabled,
+            appSettings.gameFullscreenEnabled,
+        )
+    } ?: emptyList()
