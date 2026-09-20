@@ -135,7 +135,8 @@ private sealed interface Screen {
 fun main(args: Array<String>) {
     val gameToken = headlessGameArgument(args)
     if (gameToken != null) {
-        exitProcess(runHeadless(gameToken, resolveInstallRoot(), resolveLauncherFolder()))
+        // #120 - an optional `--bezel on|off` rides along with --game.
+        exitProcess(runHeadless(gameToken, resolveInstallRoot(), resolveLauncherFolder(), headlessBezelArgument(args)))
     }
     runUi()
 }
