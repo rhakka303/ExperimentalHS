@@ -21,6 +21,12 @@ data class Game(
 private val FRAME_LINE = Regex("""^\s*\d+\s+\S+\.m2v""", RegexOption.IGNORE_CASE)
 private const val FRAMEFILE_LINES_TO_CHECK = 200
 
+// #118 - a pack game's name is passed to hypseus as the -usealt value, and
+// hypseus refuses to start if that value has any character other than ASCII
+// letters, digits, '_', '-' and '.'. A pack framefile named otherwise would
+// be listed and then fail to launch, so it is left out of the list instead.
+private val ALT_SCRIPT_NAME = Regex("""[A-Za-z0-9_.-]+""")
+
 private fun looksLikeFramefile(file: File): Boolean =
     try {
         file.useLines { lines -> lines.take(FRAMEFILE_LINES_TO_CHECK).any { FRAME_LINE.containsMatchIn(it) } }
@@ -33,12 +39,15 @@ private fun looksLikeFramefile(file: File): Boolean =
  * shared Lua zip (<folder>.zip) and no <folder>.txt of its own, with each
  * game's framefile alongside. Every real framefile in it is one game, named
  * after the file, launched with the pack's zip plus -usealt <name>.
+ *
+ * #118 - a framefile whose name hypseus would reject as a -usealt value is
+ * skipped (see ALT_SCRIPT_NAME).
  */
 private fun packGames(packDir: File): List<Game> {
     val zip = File(packDir, "${packDir.name}.zip")
     if (!zip.isFile) return emptyList()
     val framefiles = packDir.listFiles { f -> f.isFile && f.extension.equals("txt", ignoreCase = true) }
-        ?.filter { looksLikeFramefile(it) }
+        ?.filter { ALT_SCRIPT_NAME.matches(it.nameWithoutExtension) && looksLikeFramefile(it) }
         ?.sortedBy { it.name.lowercase() }
         ?: return emptyList()
     return framefiles.map { Game(it.nameWithoutExtension, GameCategory.SINGE_ZIPPED, it.path, zip.path, it.nameWithoutExtension) }
