@@ -50,6 +50,37 @@ fun headlessBezelArgument(args: Array<String>): BezelArgument {
 }
 
 /**
+ * #124 - the optional `--extra-args "<text>"` argument: extra hypseus
+ * arguments for this one launch, from an external frontend's own per-game
+ * settings. Never saved anywhere.
+ */
+sealed interface ExtraArguments {
+    /** No `--extra-args` given. */
+    data object NotGiven : ExtraArguments
+
+    /** The text after it, untouched; blank text is allowed and adds nothing. */
+    data class Given(val text: String) : ExtraArguments
+
+    /** `--extra-args` with nothing after it (or straight into another launcher flag). */
+    data object Missing : ExtraArguments
+}
+
+private val LAUNCHER_FLAGS = setOf("--game", "--bezel", "--extra-args")
+
+/**
+ * The value after `--extra-args`. A hypseus argument such as `-manymouse`
+ * starts with a single dash and is a perfectly good value; only another of
+ * this launcher's own flags right after it counts as "no value".
+ */
+fun headlessExtraArguments(args: Array<String>): ExtraArguments {
+    val index = args.indexOf("--extra-args")
+    if (index < 0) return ExtraArguments.NotGiven
+    val value = args.getOrNull(index + 1)
+    if (value == null || value in LAUNCHER_FLAGS) return ExtraArguments.Missing
+    return ExtraArguments.Given(value)
+}
+
+/**
  * The value after `--game`, or null when the flag isn't there at all
  * (normal UI start). `--game` with nothing after it returns "" - that is
  * still a headless request, and reports "no game given" instead of
@@ -116,10 +147,32 @@ fun runHeadless(
     launcherFolder: File?,
     bezel: BezelArgument,
     launch: (Game, File, File?, List<String>) -> LaunchResult = realLaunch,
+): Int = runHeadless(gameToken, installRoot, launcherFolder, bezel, ExtraArguments.NotGiven, launch)
+
+/**
+ * #124 - the same flow with an optional `--extra-args`. Its text goes on the
+ * very end of the launch's extra arguments, after everything the launcher
+ * builds itself, as ONE entry: launchGame() splits every entry with the
+ * quote-aware splitArgumentTokens(), so splitting it here as well would
+ * split it twice and cut a quoted path at its spaces. It is for this launch
+ * only and is never written to options.json. A missing value stops before
+ * anything else, like an invalid `--bezel`.
+ */
+fun runHeadless(
+    gameToken: String,
+    installRoot: File?,
+    launcherFolder: File?,
+    bezel: BezelArgument,
+    extra: ExtraArguments,
+    launch: (Game, File, File?, List<String>) -> LaunchResult = realLaunch,
 ): Int {
     if (bezel is BezelArgument.Invalid) {
         val given = if (bezel.given.isEmpty()) "nothing" else "'${bezel.given}'"
         log(launcherFolder, "Headless launch failed: --bezel needs 'on' or 'off', got $given")
+        return EXIT_BAD_ARGUMENTS
+    }
+    if (extra is ExtraArguments.Missing) {
+        log(launcherFolder, "Headless launch failed: --extra-args needs a value")
         return EXIT_BAD_ARGUMENTS
     }
 
@@ -160,7 +213,9 @@ fun runHeadless(
         log(launcherFolder, "Headless: bezel ${if (bezelOn) "on" else "off"} saved for ${game.name}")
     }
 
-    val extraArguments = extraLaunchArgsFor(installRoot, launcherFolder, appSettings, game)
+    val frontendText = (extra as? ExtraArguments.Given)?.text?.trim().orEmpty()
+    val extraArguments = extraLaunchArgsFor(installRoot, launcherFolder, appSettings, game) +
+        if (frontendText.isEmpty()) emptyList() else listOf(frontendText)
 
     return when (val result = logUnexpectedExceptions(launcherFolder, "launching ${game.name}") { launch(game, installRoot, gameFolder, extraArguments) }) {
         is LaunchResult.HypseusNotFound -> {
