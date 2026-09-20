@@ -162,6 +162,63 @@ class PackGamesTest {
         assertEquals(listOf("gamea"), games(install, gameFolder).map { it.name })
     }
 
+    // ---- #118: names hypseus would reject as a -usealt value ----
+
+    // A valid framefile with a fixed video name, so the only thing that can keep
+    // it out of the list is the file's own name.
+    private fun addPackFile(root: File, pack: String, fileName: String) {
+        File(File(File(root, "singe"), pack), fileName).writeText(frameText("video"))
+    }
+
+    @Test
+    fun `a pack framefile with a space in its name is not listed, its neighbours are`() {
+        val install = makeInstall()
+        addPack(install, "megapack", "gamea", "gameb")
+        addPackFile(install, "megapack", "has space.txt")
+
+        assertEquals(listOf("gamea", "gameb"), games(install).map { it.name })
+    }
+
+    @Test
+    fun `a pack framefile with parentheses in its name is not listed`() {
+        val install = makeInstall()
+        addPack(install, "megapack", "gamea")
+        addPackFile(install, "megapack", "game(1).txt")
+
+        assertEquals(listOf("gamea"), games(install).map { it.name })
+    }
+
+    @Test
+    fun `a pack framefile with a non-ASCII letter in its name is not listed`() {
+        val install = makeInstall()
+        addPack(install, "megapack", "gamea")
+        addPackFile(install, "megapack", "café.txt")
+
+        assertEquals(listOf("gamea"), games(install).map { it.name })
+    }
+
+    @Test
+    fun `a pack framefile named with only letters, digits, underscore, hyphen and dot is listed`() {
+        val install = makeInstall()
+        addPack(install, "megapack", "gamea")
+        addPackFile(install, "megapack", "Game_B-2.v1.txt")
+        addPackFile(install, "megapack", "38ambush.txt")
+
+        assertEquals(listOf("38ambush", "Game_B-2.v1", "gamea"), games(install).map { it.name })
+    }
+
+    @Test
+    fun `an ordinary game with a space in its name is still listed and launched with no usealt`() {
+        val install = makeInstall()
+        addNormalGame(install, "my game")
+
+        val game = games(install).single()
+
+        assertEquals("my game", game.name)
+        assertNull(game.altScript)
+        assertFalse(buildLaunchArgs(game, install).contains("-usealt"))
+    }
+
     // ---- launch arguments ----
 
     @Test
