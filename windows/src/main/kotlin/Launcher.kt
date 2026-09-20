@@ -29,20 +29,24 @@ sealed interface LaunchResult {
  * process for the whole session: an unread stdout/stderr pipe eventually
  * fills and would block hypseus mid-game. Defaults to false so the UI
  * path's behavior is untouched.
+ *
+ * #108 - gameFolder is the Game Folder page's chosen folder when it is
+ * on, null for the install's own folders; see buildLaunchArgs().
  */
 fun launchGame(
     game: Game,
     installRoot: File,
     extraArguments: List<String> = emptyList(),
     discardOutput: Boolean = false,
+    gameFolder: File? = null,
 ): LaunchResult {
     val hypseusExe = File(installRoot, "hypseus.exe")
     if (!hypseusExe.isFile) {
         return LaunchResult.HypseusNotFound(hypseusExe)
     }
 
-    val args = buildLaunchArgs(game, installRoot) +
-        extraArguments.flatMap { it.trim().split(Regex("\\s+")).filter { token -> token.isNotEmpty() } }
+    val args = buildLaunchArgs(game, installRoot, gameFolder) +
+        extraArguments.flatMap { splitArgumentTokens(it) }
     val builder = ProcessBuilder(listOf(hypseusExe.path) + args)
         .directory(installRoot)
     if (discardOutput) {
@@ -75,5 +79,42 @@ fun extraLaunchArgsFor(
             appSettings.preserveAspectRatioEnabled,
             appSettings.gamepadEnabled,
             appSettings.gameFullscreenEnabled,
+            appSettings.activeGameFolder(),
         )
     } ?: emptyList()
+
+/**
+ * #108 - splits one saved argument entry into argv tokens on whitespace,
+ * exactly as before (an entry like "-scalefactor 50" is two tokens), except
+ * that whitespace inside double quotes does not split and the quotes
+ * themselves are dropped. A folder path with spaces can now travel as one
+ * argument: `-bezeldir "D:\My Games\bezels"` stays two tokens instead of
+ * being cut at the space. Entries with no quotes behave identically.
+ */
+fun splitArgumentTokens(entry: String): List<String> {
+    val tokens = mutableListOf<String>()
+    val current = StringBuilder()
+    var inQuotes = false
+    var hasToken = false
+    for (ch in entry.trim()) {
+        when {
+            ch == '"' -> {
+                inQuotes = !inQuotes
+                hasToken = true
+            }
+            ch.isWhitespace() && !inQuotes -> {
+                if (hasToken) {
+                    tokens += current.toString()
+                    current.clear()
+                    hasToken = false
+                }
+            }
+            else -> {
+                current.append(ch)
+                hasToken = true
+            }
+        }
+    }
+    if (hasToken) tokens += current.toString()
+    return tokens
+}

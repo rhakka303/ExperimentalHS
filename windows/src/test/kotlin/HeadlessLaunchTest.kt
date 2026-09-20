@@ -46,8 +46,8 @@ class HeadlessLaunchTest {
 
     private fun game(name: String) = Game(name, GameCategory.SINGE_ZIPPED, "", "")
 
-    private val neverLaunch: (Game, File, List<String>) -> LaunchResult =
-        { _, _, _ -> error("must not launch") }
+    private val neverLaunch: (Game, File, File?, List<String>) -> LaunchResult =
+        { _, _, _, _ -> error("must not launch") }
 
     // ---- headlessGameArgument ----
 
@@ -154,7 +154,7 @@ class HeadlessLaunchTest {
     fun `hypseus exe missing at launch returns its code and logs it`() {
         makeInstall("alpha")
 
-        val code = runHeadless("alpha", installRoot, launcherFolder) { _, _, _ ->
+        val code = runHeadless("alpha", installRoot, launcherFolder) { _, _, _, _ ->
             LaunchResult.HypseusNotFound(File(installRoot, "hypseus.exe"))
         }
 
@@ -167,7 +167,7 @@ class HeadlessLaunchTest {
         makeInstall("alpha")
         var launched: Game? = null
 
-        val code = runHeadless("alpha", installRoot, launcherFolder) { g, _, _ ->
+        val code = runHeadless("alpha", installRoot, launcherFolder) { g, _, _, _ ->
             launched = g
             LaunchResult.Started(FakeProcess(7))
         }
@@ -182,7 +182,7 @@ class HeadlessLaunchTest {
         makeInstall("alpha")
         var launched: Game? = null
 
-        runHeadless(File(File("frontend", "roms"), "alpha.txt").path, installRoot, launcherFolder) { g, _, _ ->
+        runHeadless(File(File("frontend", "roms"), "alpha.txt").path, installRoot, launcherFolder) { g, _, _, _ ->
             launched = g
             LaunchResult.Started(FakeProcess(0))
         }
@@ -196,7 +196,7 @@ class HeadlessLaunchTest {
         saveOptions(launcherFolder, "alpha", GameOptions(arguments = listOf("-scalefactor 50")))
         var extra: List<String> = emptyList()
 
-        runHeadless("alpha", installRoot, launcherFolder) { _, _, e ->
+        runHeadless("alpha", installRoot, launcherFolder) { _, _, _, e ->
             extra = e
             LaunchResult.Started(FakeProcess(0))
         }
@@ -213,7 +213,7 @@ class HeadlessLaunchTest {
     fun `options changed between launches are picked up with no re-export`() {
         makeInstall("alpha")
         val seen = mutableListOf<List<String>>()
-        val capture: (Game, File, List<String>) -> LaunchResult = { _, _, e ->
+        val capture: (Game, File, File?, List<String>) -> LaunchResult = { _, _, _, e ->
             seen += e
             LaunchResult.Started(FakeProcess(0))
         }
@@ -226,5 +226,29 @@ class HeadlessLaunchTest {
         assertTrue(seen[0].contains("-first"))
         assertTrue(seen[1].contains("-second"))
         assertFalse(seen[1].contains("-first"))
+    }
+
+    @Test
+    fun `with the game folder on, scans and launches from that folder instead of the install`() {
+        makeInstall("alpha")
+        val gameFolder = File(tmp, "games").apply { mkdirs() }
+        val dir = File(File(gameFolder, "singe"), "external").apply { mkdirs() }
+        File(dir, "external.txt").writeText("")
+        File(dir, "external.zip").writeText("")
+        saveAppSettings(launcherFolder, AppSettings(gameFolderEnabled = true, gameFolderPath = gameFolder.path))
+        var launched: Game? = null
+        var folderSeen: File? = null
+
+        val code = runHeadless("external", installRoot, launcherFolder) { g, _, folder, _ ->
+            launched = g
+            folderSeen = folder
+            LaunchResult.Started(FakeProcess(0))
+        }
+
+        assertEquals(0, code)
+        assertEquals("external", launched?.name)
+        assertEquals(gameFolder, folderSeen)
+        // the install's own game is not in the chosen folder, so not launchable
+        assertEquals(EXIT_GAME_NOT_FOUND, runHeadless("alpha", installRoot, launcherFolder, neverLaunch))
     }
 }

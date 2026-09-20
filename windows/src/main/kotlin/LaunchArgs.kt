@@ -28,8 +28,17 @@ import java.io.File
  * every other native app built against the C runtime, and this story's
  * acceptance criterion is an exact match against a real logged command
  * line, not a stylistic choice to improve on.
+ *
+ * #108 - gameFolder, when non-null, becomes -homedir instead: that is the
+ * directory hypseus needs to directly contain singe/, roms/ and vldp/ (see
+ * above), so a game folder laid out that way just works. -datadir stays
+ * the install root: in cmdline.cpp it changes hypseus's working directory,
+ * and homedir lookups fall back to that directory, so the install's own
+ * fonts, pics, sound, bezels and hypinput.ini are still found. hypseus
+ * also writes its own logs/, ram/ and screenshots/ under -homedir, so
+ * those land in the game folder while it is in use.
  */
-fun buildLaunchArgs(game: Game, installRoot: File): List<String> {
+fun buildLaunchArgs(game: Game, installRoot: File, gameFolder: File? = null): List<String> {
     val args = mutableListOf<String>()
 
     when (game.category) {
@@ -50,8 +59,9 @@ fun buildLaunchArgs(game: Game, installRoot: File): List<String> {
         }
     }
 
-    val homeDir = installRoot.path
-    args += listOf("-homedir", "$homeDir/", "-datadir", "$homeDir/")
+    val dataDir = installRoot.path
+    val homeDir = (gameFolder ?: installRoot).path
+    args += listOf("-homedir", "$homeDir/", "-datadir", "$dataDir/")
     // Same baked-in default as Android, per the owner: SDL_Gamepad
     // enabled. Not configurable in phase 1. -fullscreen used to be
     // hardcoded here too - now a real setting (AppSettings.

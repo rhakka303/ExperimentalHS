@@ -64,7 +64,7 @@ fun exportBatFiles(installRoot: File, games: List<Game>, launcherFolder: File?):
 
     for (game in games) {
         val options = allOptions[game.name] ?: GameOptions()
-        val content = buildBatContent(installRoot, game, options, appSettings.gameFullscreenEnabled)
+        val content = buildBatContent(installRoot, appSettings.activeGameFolder(), game, options, appSettings.gameFullscreenEnabled)
         File(batchDir, "${game.name}.bat").writeText(content)
     }
 
@@ -72,37 +72,46 @@ fun exportBatFiles(installRoot: File, games: List<Game>, launcherFolder: File?):
 }
 
 /**
- * A path relative to installRoot itself - what hypseus resolves
- * -framefile/-zlua/-script against (its own inferred homedir), not the
- * .bat's own working directory. No `..\` prefix - see this file's own
- * doc comment for why that would point one level too high.
+ * A path relative to root - what hypseus resolves -framefile/-zlua/-script
+ * against (its own homedir), not the .bat's own working directory. No
+ * `..\` prefix - see this file's own doc comment for why that would point
+ * one level too high.
  */
-private fun relativeToInstallRoot(installRoot: File, absolutePath: String): String =
-    installRoot.toPath().relativize(File(absolutePath).toPath()).toString()
+private fun relativeToRoot(root: File, absolutePath: String): String =
+    root.toPath().relativize(File(absolutePath).toPath()).toString()
 
 private fun batArg(arg: String): String = if (arg.contains(' ')) "\"$arg\"" else arg
 
-private fun buildBatContent(installRoot: File, game: Game, options: GameOptions, gameFullscreenEnabled: Boolean): String {
+/**
+ * #108 - gameFolder, when non-null, is where these games actually live, so
+ * paths are relative to it and hypseus gets an explicit -homedir pointing
+ * there (its default would be the install, which doesn't contain them).
+ * That -homedir is necessarily an absolute path, unlike everything else in
+ * an exported file: if the game folder moves, re-export.
+ */
+private fun buildBatContent(installRoot: File, gameFolder: File?, game: Game, options: GameOptions, gameFullscreenEnabled: Boolean): String {
+    val gamesRoot = gameFolder ?: installRoot
     val args = mutableListOf<String>()
     when (game.category) {
         GameCategory.DAPHNE_NATIVE -> {
             args += game.name
             args += "vldp"
-            args += listOf("-framefile", relativeToInstallRoot(installRoot, game.framefilePath))
+            args += listOf("-framefile", relativeToRoot(gamesRoot, game.framefilePath))
         }
         GameCategory.SINGE_ZIPPED -> {
             args += "singe"
             args += "vldp"
-            args += listOf("-framefile", relativeToInstallRoot(installRoot, game.framefilePath))
-            args += listOf("-zlua", relativeToInstallRoot(installRoot, game.romOrScriptPath))
+            args += listOf("-framefile", relativeToRoot(gamesRoot, game.framefilePath))
+            args += listOf("-zlua", relativeToRoot(gamesRoot, game.romOrScriptPath))
         }
         GameCategory.SINGE_SCRIPT -> {
             args += "singe"
             args += "vldp"
-            args += listOf("-framefile", relativeToInstallRoot(installRoot, game.framefilePath))
-            args += listOf("-script", relativeToInstallRoot(installRoot, game.romOrScriptPath))
+            args += listOf("-framefile", relativeToRoot(gamesRoot, game.framefilePath))
+            args += listOf("-script", relativeToRoot(gamesRoot, game.romOrScriptPath))
         }
     }
+    if (gameFolder != null) args += listOf("-homedir", "${gameFolder.path}/")
     // #19's own extra-argument builder - bezel-family flags plus custom
     // arguments. preserveAspectRatioEnabled/gamepadEnabled default to
     // false (omitted) here on purpose: those are app-level toggles, not
@@ -124,9 +133,19 @@ private fun buildBatContent(installRoot: File, game: Game, options: GameOptions,
     // custom arguments" (need it), rather than blindly splitting
     // everything and risking breaking a path that legitimately has a
     // space in it.
-    val extraArgs = launchArgumentsFor(installRoot, options, game.name, gameFullscreenEnabled = gameFullscreenEnabled)
-    args += extraArgs.dropLast(options.arguments.size)
-    args += options.arguments.flatMap { it.trim().split(Regex("\\s+")).filter { token -> token.isNotEmpty() } }
+    //
+    // #108 - both halves go through splitArgumentTokens(): the flags can
+    // now contain a quoted -bezeldir path with spaces (which stays one
+    // token, its quotes dropped here and re-added by batArg() below), and
+    // custom arguments get the same quote-aware split the live launcher
+    // uses.
+    val extraArgs = launchArgumentsFor(
+        installRoot, options, game.name,
+        gameFullscreenEnabled = gameFullscreenEnabled,
+        gameFolder = gameFolder,
+    )
+    args += extraArgs.dropLast(options.arguments.size).flatMap { splitArgumentTokens(it) }
+    args += options.arguments.flatMap { splitArgumentTokens(it) }
 
     val commandLine = (listOf("..\\hypseus.exe") + args).joinToString(" ") { batArg(it) }
     // CRLF line endings, matching real Windows .bat file convention

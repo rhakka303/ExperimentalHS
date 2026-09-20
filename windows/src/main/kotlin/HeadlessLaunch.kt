@@ -59,14 +59,16 @@ fun findGameByToken(games: List<Game>, token: String): Game? {
  * not logged - hypseus writes its own logs for the session.
  *
  * launch is injectable so tests can run this without starting a real
- * hypseus.exe.
+ * hypseus.exe. Its arguments are the game, the install root, the Game
+ * Folder page's chosen folder (null when it is off or unset, #108), and
+ * the extra launch arguments.
  */
 fun runHeadless(
     gameToken: String,
     installRoot: File?,
     launcherFolder: File?,
-    launch: (Game, File, List<String>) -> LaunchResult = { game, root, extra ->
-        launchGame(game, root, extra, discardOutput = true)
+    launch: (Game, File, File?, List<String>) -> LaunchResult = { game, root, gameFolder, extra ->
+        launchGame(game, root, extra, discardOutput = true, gameFolder = gameFolder)
     },
 ): Int {
     if (installRoot == null) {
@@ -74,7 +76,12 @@ fun runHeadless(
         return EXIT_NOT_A_HYPSEUS_INSTALL
     }
 
-    val games = when (val scan = logUnexpectedExceptions(launcherFolder, "scanning for games") { scanGames(installRoot) }) {
+    // Read once, up front: the scan and the launch below must agree on the
+    // game folder, and both read the same saved settings the UI does.
+    val appSettings = launcherFolder?.let { loadAppSettings(it) } ?: AppSettings()
+    val gameFolder = appSettings.activeGameFolder()
+
+    val games = when (val scan = logUnexpectedExceptions(launcherFolder, "scanning for games") { scanGames(installRoot, gameFolder) }) {
         is ScanResult.NotAHypseusInstall -> {
             log(launcherFolder, "Headless launch failed: not a hypseus installation: ${scan.checkedPath}")
             return EXIT_NOT_A_HYPSEUS_INSTALL
@@ -89,10 +96,9 @@ fun runHeadless(
         return EXIT_GAME_NOT_FOUND
     }
 
-    val appSettings = launcherFolder?.let { loadAppSettings(it) } ?: AppSettings()
     val extraArguments = extraLaunchArgsFor(installRoot, launcherFolder, appSettings, game)
 
-    return when (val result = logUnexpectedExceptions(launcherFolder, "launching ${game.name}") { launch(game, installRoot, extraArguments) }) {
+    return when (val result = logUnexpectedExceptions(launcherFolder, "launching ${game.name}") { launch(game, installRoot, gameFolder, extraArguments) }) {
         is LaunchResult.HypseusNotFound -> {
             log(launcherFolder, "Launch failed for ${game.name}: hypseus.exe not found at ${result.expectedPath}")
             EXIT_HYPSEUS_NOT_FOUND

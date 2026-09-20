@@ -111,6 +111,8 @@ private sealed interface Screen {
     // Preserve Video Aspect Ratio moved here from AppSettings, plus the
     // new Full Screen toggle.
     data object VideoSettings : Screen
+    // #108 - reached from Settings' Manage Game Folder card.
+    data object GameFolder : Screen
     data object Controls : Screen
     data object About : Screen
     // #20 - real content on day one, not a blank stub: exporting a
@@ -204,6 +206,14 @@ private fun runUi() = application {
                 // inside the same remember{} as the value itself so they
                 // fire exactly once per resolved value, not on every
                 // recomposition of the Text/branch below.
+                // #108 - the Game Folder page's chosen folder (null: the
+                // install's own folders). Lives up here, not on the page,
+                // because changing it has to re-scan the game list, which
+                // is computed at this level.
+                var gameFolder by remember(launcherFolder) {
+                    mutableStateOf(launcherFolder?.let { loadAppSettings(it).activeGameFolder() })
+                }
+
                 val installRoot = remember {
                     logUnexpectedExceptions(launcherFolder, "resolving the install root") { resolveInstallRoot() }
                         .also { root ->
@@ -223,12 +233,15 @@ private fun runUi() = application {
                         "Could not determine where HypdroidDesktop is running from.",
                         modifier = Modifier.padding(16.dp),
                     )
-                    else -> when (val result = remember(installRoot) {
-                        logUnexpectedExceptions(launcherFolder, "scanning for games") { scanGames(installRoot) }
+                    else -> when (val result = remember(installRoot, gameFolder) {
+                        logUnexpectedExceptions(launcherFolder, "scanning for games") { scanGames(installRoot, gameFolder) }
                             .also { r ->
                                 when (r) {
                                     is ScanResult.NotAHypseusInstall -> log(launcherFolder, "Not a hypseus installation: ${r.checkedPath}")
-                                    is ScanResult.Found -> log(launcherFolder, "Found ${r.games.size} game(s)")
+                                    is ScanResult.Found -> log(
+                                        launcherFolder,
+                                        "Found ${r.games.size} game(s)" + (gameFolder?.let { " in game folder $it" } ?: ""),
+                                    )
                                 }
                             }
                     }) {
@@ -237,16 +250,31 @@ private fun runUi() = application {
                             modifier = Modifier.padding(16.dp),
                         )
                         is ScanResult.Found -> if (result.games.isEmpty()) {
-                            Text(
-                                "No games found in this install.",
-                                modifier = Modifier.padding(16.dp),
-                            )
+                            if (gameFolder != null) {
+                                // #108 - the chosen folder has no games (wrong
+                                // folder, or a drive that isn't connected).
+                                // Showing only a message here would strand the
+                                // user with no way into Settings to fix it, so
+                                // show the Game Folder page itself.
+                                GameFolderScreen(
+                                    launcherFolder = launcherFolder,
+                                    onGameFolderChanged = { gameFolder = it },
+                                    onBack = null,
+                                    notice = "No games found in the chosen game folder. Choose a different folder, or turn the option off to use the default.",
+                                )
+                            } else {
+                                Text(
+                                    "No games found in this install.",
+                                    modifier = Modifier.padding(16.dp),
+                                )
+                            }
                         } else {
                             HypdroidApp(
                                 games = result.games,
                                 installRoot = installRoot,
                                 launcherFolder = launcherFolder,
                                 windowState = windowState,
+                                onGameFolderChanged = { gameFolder = it },
                             )
                         }
                     }
@@ -262,6 +290,7 @@ private fun HypdroidApp(
     installRoot: File,
     launcherFolder: File?,
     windowState: WindowState,
+    onGameFolderChanged: (File?) -> Unit,
 ) {
     // #19 - lifted out of GameCarousel so the pager's position survives a
     // trip to another screen and back ("Back returns to the carousel, on
@@ -296,7 +325,20 @@ private fun HypdroidApp(
             onOpenAbout = { screen = Screen.About },
             onOpenVideoSettings = { screen = Screen.VideoSettings },
             onOpenExport = { screen = Screen.Export },
+            onOpenGameFolder = { screen = Screen.GameFolder },
             onBack = { screen = Screen.Carousel },
+        )
+        // #108 - a new game folder means a different game list, so the
+        // carousel position from the old one is meaningless (and could be
+        // past the end of the new list): reset it before re-scanning.
+        is Screen.GameFolder -> GameFolderScreen(
+            launcherFolder = launcherFolder,
+            onGameFolderChanged = {
+                carouselPage = 0
+                onGameFolderChanged(it)
+            },
+            onBack = { screen = Screen.Settings },
+            notice = null,
         )
         is Screen.AppSettings -> AppSettingsScreen(launcherFolder = launcherFolder, onBack = { screen = Screen.Settings })
         is Screen.VideoSettings -> VideoSettingsScreen(
@@ -472,7 +514,7 @@ private fun GameCarousel(
         // each call site (card onClick, keyboard Enter, gamepad LAUNCH)
         // separately.
         if (isGameRunning) return
-        val result = launchGame(game, installRoot, extraArgsFor(game))
+        val result = launchGame(game, installRoot, extraArgsFor(game), gameFolder = appSettings.activeGameFolder())
         // #94 follow-up, real live feedback: a successful launch isn't
         // logged here - hypseus itself already writes its own real logs
         // for the actual game session (#6's own non-goal: that's the
@@ -2402,6 +2444,204 @@ private fun VideoSettingsScreen(launcherFolder: File?, onBack: () -> Unit) {
     }
 }
 
+// #108 - CHANGE only ever appears in the real focus list while the toggle
+// is on, matching when the button can actually be clicked (#76's same
+// conditional-list model as AppSettingsControl).
+private enum class GameFolderControl { GAME_FOLDER_SWITCH, CHANGE }
+
+/**
+ * #108 - the Game Folder page: an On/Off toggle for reading games from a
+ * folder the user chooses instead of the install's own singe/vldp/roms,
+ * a Change button (disabled while off) that opens a folder chooser, a
+ * blank second card, and the recommended folder layout underneath.
+ *
+ * onBack is null only when this page is shown in place of an empty game
+ * list (see the call site in runUi): there is nowhere to go back to, and
+ * the page is the only way out of that state. notice is the line
+ * explaining why in that case.
+ */
+@Composable
+private fun GameFolderScreen(
+    launcherFolder: File?,
+    onGameFolderChanged: (File?) -> Unit,
+    onBack: (() -> Unit)?,
+    notice: String?,
+) {
+    var settings by remember {
+        mutableStateOf(if (launcherFolder != null) loadAppSettings(launcherFolder) else AppSettings())
+    }
+    // True for as long as the native chooser is open. It is modal, but the
+    // gamepad collector below keeps running underneath it, so without this
+    // a button press would also move focus / activate controls behind it.
+    var chooserOpen by remember { mutableStateOf(false) }
+
+    fun persist(updated: AppSettings) {
+        settings = updated
+        if (launcherFolder != null) saveAppSettings(launcherFolder, updated)
+        onGameFolderChanged(updated.activeGameFolder())
+    }
+
+    fun chooseNewFolder() {
+        if (chooserOpen) return
+        chooserOpen = true
+        val picked = try {
+            chooseFolder(settings.gameFolderPath?.let { File(it) }, "Choose your game folder")
+        } finally {
+            chooserOpen = false
+        }
+        if (picked != null) persist(settings.copy(gameFolderPath = picked.path))
+    }
+
+    val controls = remember(settings.gameFolderEnabled) {
+        buildList {
+            add(GameFolderControl.GAME_FOLDER_SWITCH)
+            if (settings.gameFolderEnabled) add(GameFolderControl.CHANGE)
+        }
+    }
+    // Same stable-indirection fix as #76's follow-up on AppSettingsScreen:
+    // the gamepad collector below never restarts, so anything it calls has
+    // to read the latest list and focus, not the first composition's.
+    val currentControls by rememberUpdatedState(controls)
+    var focusIndex by remember { mutableStateOf(0) }
+    val focusedControl = controls.getOrNull(focusIndex.coerceIn(0, controls.lastIndex))
+    val currentFocusedControl by rememberUpdatedState(focusedControl)
+
+    fun moveFocusUp() {
+        focusIndex = (focusIndex - 1).coerceAtLeast(0)
+    }
+    fun moveFocusDown() {
+        focusIndex = (focusIndex + 1).coerceAtMost(currentControls.lastIndex)
+    }
+    fun activateFocused() {
+        when (currentFocusedControl) {
+            GameFolderControl.GAME_FOLDER_SWITCH -> persist(settings.copy(gameFolderEnabled = !settings.gameFolderEnabled))
+            GameFolderControl.CHANGE -> chooseNewFolder()
+            null -> Unit
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        GamepadInputBus.events.collect { action ->
+            if (chooserOpen) return@collect
+            when (action) {
+                GamepadAction.UP -> moveFocusUp()
+                GamepadAction.OPTIONS -> moveFocusDown()
+                GamepadAction.LAUNCH -> activateFocused()
+                GamepadAction.BACK -> onBack?.invoke()
+                GamepadAction.LEFT, GamepadAction.RIGHT -> Unit
+            }
+        }
+    }
+
+    val focusRequester = remember { FocusRequester() }
+    var hasRequestedInitialFocus by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+            .focusRequester(focusRequester)
+            .onGloballyPositioned {
+                if (!hasRequestedInitialFocus) {
+                    hasRequestedInitialFocus = true
+                    try {
+                        focusRequester.requestFocus()
+                    } catch (e: IllegalStateException) {
+                        // see #17's identical guard on GameCarousel
+                    }
+                }
+            }
+            .focusable()
+            .onKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown || chooserOpen) return@onKeyEvent false
+                when (event.key) {
+                    Key.Escape -> { onBack?.invoke(); onBack != null }
+                    Key.Enter, Key.NumPadEnter, Key.CtrlLeft -> { activateFocused(); true }
+                    Key.DirectionUp -> { moveFocusUp(); true }
+                    Key.DirectionDown -> { moveFocusDown(); true }
+                    else -> false
+                }
+            },
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (onBack != null) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+            Text("Game Folder", style = MaterialTheme.typography.titleLarge)
+        }
+
+        if (notice != null) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(notice, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedCard(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Game Folder", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                "On: Choose game folder. Off: default singe folder.",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                        Switch(
+                            checked = settings.gameFolderEnabled,
+                            onCheckedChange = { persist(settings.copy(gameFolderEnabled = it)) },
+                            interactionSource = rememberFocusInteractionSource(
+                                isFocused = focusedControl == GameFolderControl.GAME_FOLDER_SWITCH,
+                                onRealHover = { focusIndex = controls.indexOf(GameFolderControl.GAME_FOLDER_SWITCH) },
+                            ),
+                        )
+                    }
+                    // Same 24dp clearance past the Switch's inflated hit box
+                    // as AppSettingsScreen's Change row (#76 follow-up), so
+                    // a click aimed at Change can't land on the Switch.
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        val path = settings.gameFolderPath?.takeIf { it.isNotBlank() }
+                        Text(
+                            path ?: "No folder chosen",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (settings.gameFolderEnabled) 1f else 0.38f),
+                            modifier = Modifier.weight(1f),
+                        )
+                        Button(
+                            onClick = { chooseNewFolder() },
+                            enabled = settings.gameFolderEnabled,
+                            interactionSource = rememberFocusInteractionSource(
+                                isFocused = focusedControl == GameFolderControl.CHANGE,
+                                onRealHover = { focusIndex = controls.indexOf(GameFolderControl.CHANGE).coerceAtLeast(0) },
+                            ),
+                        ) { Text("Change") }
+                    }
+                }
+            }
+
+            OutlinedCard(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.padding(16.dp).fillMaxWidth()) {
+                    Text("Future Placeholder", style = MaterialTheme.typography.titleMedium)
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Text("Recommended Folder Structure", style = MaterialTheme.typography.headlineSmall)
+        Spacer(modifier = Modifier.height(8.dp))
+        Text("Create subfolders inside your game folder:", style = MaterialTheme.typography.bodyMedium)
+        Text("- roms: Daphne ROM(s)", style = MaterialTheme.typography.bodyMedium)
+        Text("- vldp: Daphne framefile folder(s)", style = MaterialTheme.typography.bodyMedium)
+        Text("- singe: Fan-made game(s)", style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
 /**
  * #20 - real content on day one, not a blank stub: one action, exporting
  * a standalone `.bat` per scanned game into `batch/` (BatExport.kt does
@@ -3135,12 +3375,15 @@ private fun TokenPickerDialog(title: String, options: List<String>, onSelect: (S
 // 3, Export took About's old row-2 spot) - this topology reflects the
 // new layout, not the enum's own declaration order (which is otherwise
 // unrelated to grid position).
-private enum class SettingsFocus { APP_SETTINGS, CONTROLS, ABOUT, VIDEO_SETTINGS, EXPORT }
+// #108 - GAME_FOLDER is the third row's right cell (next to ABOUT, under
+// VIDEO_SETTINGS), the cell that used to be a blank placeholder.
+private enum class SettingsFocus { APP_SETTINGS, CONTROLS, ABOUT, VIDEO_SETTINGS, EXPORT, GAME_FOLDER }
 
 private fun SettingsFocus.moveUp(): SettingsFocus = when (this) {
     SettingsFocus.EXPORT -> SettingsFocus.APP_SETTINGS
     SettingsFocus.VIDEO_SETTINGS -> SettingsFocus.CONTROLS
     SettingsFocus.ABOUT -> SettingsFocus.EXPORT
+    SettingsFocus.GAME_FOLDER -> SettingsFocus.VIDEO_SETTINGS
     else -> this
 }
 
@@ -3148,18 +3391,21 @@ private fun SettingsFocus.moveDown(): SettingsFocus = when (this) {
     SettingsFocus.APP_SETTINGS -> SettingsFocus.EXPORT
     SettingsFocus.CONTROLS -> SettingsFocus.VIDEO_SETTINGS
     SettingsFocus.EXPORT -> SettingsFocus.ABOUT
+    SettingsFocus.VIDEO_SETTINGS -> SettingsFocus.GAME_FOLDER
     else -> this
 }
 
 private fun SettingsFocus.moveLeft(): SettingsFocus = when (this) {
     SettingsFocus.CONTROLS -> SettingsFocus.APP_SETTINGS
     SettingsFocus.VIDEO_SETTINGS -> SettingsFocus.EXPORT
+    SettingsFocus.GAME_FOLDER -> SettingsFocus.ABOUT
     else -> this
 }
 
 private fun SettingsFocus.moveRight(): SettingsFocus = when (this) {
     SettingsFocus.APP_SETTINGS -> SettingsFocus.CONTROLS
     SettingsFocus.EXPORT -> SettingsFocus.VIDEO_SETTINGS
+    SettingsFocus.ABOUT -> SettingsFocus.GAME_FOLDER
     else -> this
 }
 
@@ -3170,6 +3416,7 @@ private fun SettingsScreen(
     onOpenAbout: () -> Unit,
     onOpenVideoSettings: () -> Unit,
     onOpenExport: () -> Unit,
+    onOpenGameFolder: () -> Unit,
     onBack: () -> Unit,
 ) {
     val focusRequester = remember { FocusRequester() }
@@ -3190,6 +3437,7 @@ private fun SettingsScreen(
             SettingsFocus.ABOUT -> onOpenAbout()
             SettingsFocus.VIDEO_SETTINGS -> onOpenVideoSettings()
             SettingsFocus.EXPORT -> onOpenExport()
+            SettingsFocus.GAME_FOLDER -> onOpenGameFolder()
         }
     }
 
@@ -3280,12 +3528,8 @@ private fun SettingsScreen(
         Spacer(modifier = Modifier.height(12.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             SettingsCard("About", "Build info, credits, open source", Modifier.weight(1f), focus == SettingsFocus.ABOUT, { focus = SettingsFocus.ABOUT }, onOpenAbout)
-            // Blank/TBD, matching GameHackScreen's own identical
-            // blank-second-card precedent - not a SettingsCard, no focus
-            // stop, purely a visual placeholder.
-            OutlinedCard(modifier = Modifier.weight(1f)) {
-                Column(modifier = Modifier.padding(12.dp).fillMaxWidth()) {}
-            }
+            // #108 - this cell was a blank placeholder until now.
+            SettingsCard("Manage Game Folder", "Choose where your games live", Modifier.weight(1f), focus == SettingsFocus.GAME_FOLDER, { focus = SettingsFocus.GAME_FOLDER }, onOpenGameFolder)
         }
     }
 }

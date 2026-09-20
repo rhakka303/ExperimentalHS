@@ -28,8 +28,13 @@ sealed interface ScanResult {
  * singe/FrameworkKimmy sit alongside real games with no special-casing:
  * they have no matching <name>.txt framefile, so they're never
  * candidates.
+ *
+ * #108 - gameFolder, when non-null, is where singe/, vldp/ and roms/ are
+ * read from instead of installRoot itself. installRoot is still what has
+ * to contain hypseus.exe: the engine always lives in the install, only
+ * the games can live elsewhere.
  */
-fun scanGames(installRoot: File): ScanResult {
+fun scanGames(installRoot: File, gameFolder: File? = null): ScanResult {
     // hypseus.exe is the one file every real install has, regardless of
     // whether singe/roms/vldp happen to be empty (a fresh install's are -
     // confirmed against a real one in smoke/).
@@ -37,9 +42,10 @@ fun scanGames(installRoot: File): ScanResult {
         return ScanResult.NotAHypseusInstall(installRoot)
     }
 
+    val gamesRoot = gameFolder ?: installRoot
     val games = mutableListOf<Game>()
 
-    val singeDir = File(installRoot, "singe")
+    val singeDir = File(gamesRoot, "singe")
     singeDir.listFiles { f -> f.isDirectory }?.forEach { gameDir ->
         val name = gameDir.name
         val framefile = File(gameDir, "$name.txt")
@@ -53,8 +59,8 @@ fun scanGames(installRoot: File): ScanResult {
         }
     }
 
-    val vldpDir = File(installRoot, "vldp")
-    val romsDir = File(installRoot, "roms")
+    val vldpDir = File(gamesRoot, "vldp")
+    val romsDir = File(gamesRoot, "roms")
     if (vldpDir.isDirectory) {
         vldpDir.listFiles { f -> f.isDirectory }?.forEach { gameDir ->
             val name = gameDir.name
