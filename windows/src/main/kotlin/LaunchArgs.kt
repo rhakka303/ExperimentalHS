@@ -87,8 +87,17 @@ fun buildLaunchArgs(game: Game, installRoot: File, gameFolder: File? = null): Li
  * launch of any such game then fails with "Error copying zip ramfile".
  * -ramdir makes hypseus use this one absolute location for both.
  *
- * Forward slashes and no trailing slash, the form hypseus itself trims
- * to. hypseus cuts every switch value at 80 characters, the same limit
- * -homedir already has.
+ * #121 - written with the platform's own separators (backslashes on
+ * Windows), NOT forward slashes. Before a Singe script can write a file
+ * into ram, hypseus (lua_chkdir in luretro.c) creates each folder of the
+ * path in turn, cutting at every '/'. With "X:/games/ram" the first cut is
+ * the bare drive "X:", which stat() cannot find and mkdir() cannot make, so
+ * the script's write is refused ("File exists") and the game quits. With
+ * "X:\games\ram" there is no '/' before the ram folder, so that step never
+ * happens. The drive letter still comes from the folder chosen on the Game
+ * Folder page; nothing here is hard-coded.
+ *
+ * No trailing separator (File.path never leaves one). hypseus cuts every
+ * switch value at 80 characters, the same limit -homedir already has.
  */
-fun ramDirFor(gameFolder: File): String = "${gameFolder.path.replace('\\', '/')}/ram"
+fun ramDirFor(gameFolder: File): String = File(gameFolder, "ram").path
