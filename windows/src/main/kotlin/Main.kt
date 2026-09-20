@@ -2653,6 +2653,13 @@ private fun GameFolderScreen(
 private fun ExportScreen(games: List<Game>, installRoot: File, launcherFolder: File?, onBack: () -> Unit) {
     var resultMessage by remember { mutableStateOf<String?>(null) }
 
+    // #110 - the Create TXT File card only works with a game folder chosen
+    // (Game Folder page toggle On and a folder picked); read once on entry,
+    // like every other page reads its settings.
+    val gameFolder = remember(launcherFolder) {
+        launcherFolder?.let { loadAppSettings(it).activeGameFolder() }
+    }
+
     val focusRequester = remember { FocusRequester() }
     var hasRequestedInitialFocus by remember { mutableStateOf(false) }
 
@@ -2710,10 +2717,33 @@ private fun ExportScreen(games: List<Game>, installRoot: File, launcherFolder: F
                     }) { Text("Generate") }
                 }
             }
-            // Blank/TBD, matching GameHackScreen's own identical
-            // blank-second-card precedent.
+            // #110 - this was the blank placeholder card until now.
             OutlinedCard(modifier = Modifier.weight(1f)) {
-                Column(modifier = Modifier.padding(12.dp).fillMaxWidth()) {}
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Create TXT File", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Writes one .txt file per game into the Chosen Game folder.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    Button(
+                        enabled = gameFolder != null,
+                        onClick = {
+                            if (gameFolder == null) return@Button
+                            resultMessage = try {
+                                val r = exportTxtFiles(gameFolder, games)
+                                "Created ${r.created}, skipped ${r.skipped}, removed ${r.removed}"
+                            } catch (e: java.io.IOException) {
+                                log(launcherFolder, "Create TXT File failed in $gameFolder: ${e.message}")
+                                "Could not write to the game folder: ${e.message}"
+                            }
+                        },
+                    ) { Text("Generate") }
+                }
             }
         }
 
