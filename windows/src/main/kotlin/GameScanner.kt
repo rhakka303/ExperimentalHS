@@ -50,6 +50,17 @@ sealed interface ScanResult {
 }
 
 /**
+ * #113 - the order games are listed in: by name, A to Z, ignoring letter
+ * case. A plain sortedBy { it.name } puts every capitalized name before
+ * every lowercase one, so lowercase games pile up in a block at the end and
+ * look missing. Names equal ignoring case fall back to the exact name so the
+ * order is stable. Digits and punctuation keep their plain character order
+ * (no natural number ordering).
+ */
+fun sortGames(games: List<Game>): List<Game> =
+    games.sortedWith(compareBy<Game> { it.name.lowercase() }.thenBy { it.name })
+
+/**
  * #8 - given a hypseus install root, produce the games it contains. Folder
  * conventions match the Android GameScanner exactly (that file is the
  * specification, not something copied from): Singe games live under
@@ -123,7 +134,7 @@ fun scanGames(installRoot: File, gameFolder: File? = null): ScanResult {
         if (taken.add(packed.name.lowercase())) games += packed
     }
 
-    return ScanResult.Found(games.sortedBy { it.name })
+    return ScanResult.Found(sortGames(games))
 }
 
 /**
