@@ -4,6 +4,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.io.TempDir
 
 /**
@@ -171,13 +172,40 @@ class GameFolderTest {
         val args = buildLaunchArgs(game, install, games)
 
         assertEquals(ramDirFor(games), args[args.indexOf("-ramdir") + 1])
-        assertEquals(games.path.replace('\\', '/') + "/ram", ramDirFor(games))
+        assertEquals(File(games, "ram").path, ramDirFor(games))
+    }
+
+    // ---- #121: native separators ----
+
+    @Test
+    fun `ramdir uses the platform's own separators and no trailing separator`() {
+        val sep = File.separator
+        assertEquals("D:${sep}my games${sep}roms${sep}ram", ramDirFor(File("D:/my games/roms")))
+        assertEquals("D:${sep}games${sep}ram", ramDirFor(File("D:/games/")))
     }
 
     @Test
-    fun `ramdir uses forward slashes and no trailing slash`() {
-        assertEquals("D:/my games/roms/ram", ramDirFor(File("D:\\my games\\roms")))
-        assertEquals("D:/games/ram", ramDirFor(File("D:/games/")))
+    fun `on Windows ramdir has no forward slash, so hypseus never cuts at the bare drive`() {
+        assumeTrue(File.separatorChar == '\\')
+        val install = makeInstall()
+        val games = File(tmp, "my games").apply { mkdirs() }
+
+        val value = ramDirFor(File("D:/my games/roms"))
+        val args = buildLaunchArgs(game, install, games)
+        val launched = args[args.indexOf("-ramdir") + 1]
+
+        assertEquals("D:\\my games\\roms\\ram", value)
+        assertFalse(value.contains('/'), value)
+        assertFalse(launched.contains('/'), launched)
+        assertTrue(launched.endsWith("\\ram"), launched)
+    }
+
+    @Test
+    fun `the drive letter comes from the chosen folder, not from anywhere fixed`() {
+        assumeTrue(File.separatorChar == '\\')
+
+        assertEquals("E:\\collections\\roms\\ram", ramDirFor(File("E:\\collections\\roms")))
+        assertEquals("Z:\\g\\ram", ramDirFor(File("Z:\\g")))
     }
 
     @Test
@@ -242,6 +270,8 @@ class GameFolderTest {
         val bat = File(File(install, "batch"), "external.bat").readText()
         // the path has a space, so it must be quoted as one argument
         assertTrue(bat.contains("-ramdir \"${ramDirFor(games)}\""), bat)
+        // #121 - and on Windows it is written with backslashes only
+        if (File.separatorChar == '\\') assertFalse(ramDirFor(games).contains('/'), ramDirFor(games))
     }
 
     // ---- splitArgumentTokens ----
