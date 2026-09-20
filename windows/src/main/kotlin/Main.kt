@@ -136,7 +136,13 @@ fun main(args: Array<String>) {
     val gameToken = headlessGameArgument(args)
     if (gameToken != null) {
         // #120 - an optional `--bezel on|off` rides along with --game.
-        exitProcess(runHeadless(gameToken, resolveInstallRoot(), resolveLauncherFolder(), headlessBezelArgument(args)))
+        // #124 - so does an optional `--extra-args "<text>"`.
+        exitProcess(
+            runHeadless(
+                gameToken, resolveInstallRoot(), resolveLauncherFolder(),
+                headlessBezelArgument(args), headlessExtraArguments(args),
+            ),
+        )
     }
     runUi()
 }

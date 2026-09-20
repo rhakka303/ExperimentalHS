@@ -393,4 +393,129 @@ class HeadlessLaunchTest {
         runHeadless("alpha", installRoot, launcherFolder, BezelArgument.Off, capturing(mutableListOf()))
         assertTrue(loadAllOptions(launcherFolder)["alpha"]?.bezelEnabled == false)
     }
+
+    // ---- #124: --extra-args ----
+
+    private fun launchWith(extra: ExtraArguments, bezel: BezelArgument = BezelArgument.NotGiven): Pair<Int, List<String>> {
+        val seen = mutableListOf<List<String>>()
+        val code = runHeadless("alpha", installRoot, launcherFolder, bezel, extra, capturing(seen))
+        return code to seen.singleOrNull().orEmpty()
+    }
+
+    @Test
+    fun `no --extra-args is not given, and a value is taken as it is`() {
+        assertEquals(ExtraArguments.NotGiven, headlessExtraArguments(arrayOf()))
+        assertEquals(ExtraArguments.NotGiven, headlessExtraArguments(arrayOf("--game", "alpha")))
+        assertEquals(ExtraArguments.Given("-a -b 1"), headlessExtraArguments(arrayOf("--game", "alpha", "--extra-args", "-a -b 1")))
+        assertEquals(ExtraArguments.Given("-manymouse"), headlessExtraArguments(arrayOf("--extra-args", "-manymouse", "--game", "alpha")))
+    }
+
+    @Test
+    fun `--extra-args with nothing after it, or straight into another launcher flag, has no value`() {
+        assertEquals(ExtraArguments.Missing, headlessExtraArguments(arrayOf("--game", "alpha", "--extra-args")))
+        assertEquals(ExtraArguments.Missing, headlessExtraArguments(arrayOf("--extra-args", "--bezel", "on")))
+        assertEquals(ExtraArguments.Missing, headlessExtraArguments(arrayOf("--extra-args", "--game", "alpha")))
+    }
+
+    @Test
+    fun `the extra text goes on the very end, after the saved custom arguments, as one entry`() {
+        makeInstall("alpha")
+        saveOptions(launcherFolder, "alpha", GameOptions(arguments = listOf("-scanlines")))
+
+        val (code, extra) = launchWith(ExtraArguments.Given("-first -second 2"))
+
+        assertEquals(0, code)
+        assertEquals("-first -second 2", extra.last())
+        assertTrue(extra.indexOf("-scanlines") < extra.lastIndex, extra.toString())
+    }
+
+    @Test
+    fun `a quoted value with spaces stays one argument once the launcher splits it`() {
+        makeInstall("alpha")
+        val (_, extra) = launchWith(ExtraArguments.Given("-keymapfile \"my folder\\keys.ini\" -manymouse"))
+
+        assertEquals(listOf("-keymapfile", "my folder\\keys.ini", "-manymouse"), splitArgumentTokens(extra.last()))
+    }
+
+    @Test
+    fun `blank extra text adds nothing`() {
+        makeInstall("alpha")
+        val (_, baseline) = launchWith(ExtraArguments.NotGiven)
+        val (_, blank) = launchWith(ExtraArguments.Given("   "))
+        val (_, empty) = launchWith(ExtraArguments.Given(""))
+
+        assertEquals(baseline, blank)
+        assertEquals(baseline, empty)
+    }
+
+    @Test
+    fun `surrounding whitespace in the extra text is trimmed`() {
+        makeInstall("alpha")
+
+        assertEquals("-x", launchWith(ExtraArguments.Given("  -x  ")).second.last())
+    }
+
+    @Test
+    fun `--extra-args never touches options json, even when the game has saved options`() {
+        makeInstall("alpha")
+        saveOptions(launcherFolder, "alpha", GameOptions(arguments = listOf("-scanlines"), bezelEnabled = true))
+        val before = optionsFile().readBytes()
+
+        launchWith(ExtraArguments.Given("-one -two"))
+
+        assertTrue(before.contentEquals(optionsFile().readBytes()), "options.json changed")
+    }
+
+    @Test
+    fun `--extra-args with no saved options at all does not create options json`() {
+        makeInstall("alpha")
+
+        launchWith(ExtraArguments.Given("-one"))
+
+        assertFalse(optionsFile().exists())
+    }
+
+    @Test
+    fun `a missing --extra-args value launches nothing, saves nothing, logs why, and returns its own code`() {
+        makeInstall("alpha")
+
+        val code = runHeadless("alpha", installRoot, launcherFolder, BezelArgument.NotGiven, ExtraArguments.Missing, neverLaunch)
+
+        assertEquals(EXIT_BAD_ARGUMENTS, code)
+        assertFalse(optionsFile().exists())
+        assertTrue(logText().contains("--extra-args needs a value"), logText())
+    }
+
+    @Test
+    fun `--extra-args works together with --bezel, and neither changes the other`() {
+        makeInstall("alpha")
+        putBezelPng("alpha")
+
+        val (code, extra) = launchWith(ExtraArguments.Given("-tail"), BezelArgument.On)
+
+        assertEquals(0, code)
+        assertTrue(loadOptions(launcherFolder, "alpha").bezelEnabled)
+        assertTrue(extra.containsAll(listOf("-bezel", "alpha.png")), extra.toString())
+        assertEquals("-tail", extra.last())
+    }
+
+    @Test
+    fun `an unknown game with --extra-args returns the not-found code and saves nothing`() {
+        makeInstall("alpha")
+
+        val code = runHeadless("nope", installRoot, launcherFolder, BezelArgument.NotGiven, ExtraArguments.Given("-x"), neverLaunch)
+
+        assertEquals(EXIT_GAME_NOT_FOUND, code)
+        assertFalse(optionsFile().exists())
+    }
+
+    @Test
+    fun `the extra text is not remembered for the next launch`() {
+        makeInstall("alpha")
+
+        launchWith(ExtraArguments.Given("-once"))
+        val (_, second) = launchWith(ExtraArguments.NotGiven)
+
+        assertFalse(second.any { it.contains("-once") }, second.toString())
+    }
 }
