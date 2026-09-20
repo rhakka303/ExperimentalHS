@@ -51,6 +51,9 @@ fun buildLaunchArgs(game: Game, installRoot: File, gameFolder: File? = null): Li
             args += "singe"
             args += "vldp"
             args += listOf("-framefile", game.framefilePath, "-zlua", game.romOrScriptPath)
+            // #111 - a game in a multi-game pack: without this hypseus looks
+            // inside the shared zip for <zipname>.singe, which isn't there.
+            game.altScript?.let { args += listOf("-usealt", it) }
         }
         GameCategory.SINGE_SCRIPT -> {
             args += "singe"

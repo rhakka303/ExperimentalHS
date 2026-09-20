@@ -103,6 +103,8 @@ private fun buildBatContent(installRoot: File, gameFolder: File?, game: Game, op
             args += "vldp"
             args += listOf("-framefile", relativeToRoot(gamesRoot, game.framefilePath))
             args += listOf("-zlua", relativeToRoot(gamesRoot, game.romOrScriptPath))
+            // #111 - see buildLaunchArgs(): a multi-game pack game needs its startup script named
+            game.altScript?.let { args += listOf("-usealt", it) }
         }
         GameCategory.SINGE_SCRIPT -> {
             args += "singe"

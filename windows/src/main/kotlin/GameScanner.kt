@@ -2,12 +2,47 @@ import java.io.File
 
 enum class GameCategory { SINGE_ZIPPED, SINGE_SCRIPT, DAPHNE_NATIVE }
 
+/**
+ * #111 - altScript is set only for a game that lives in a multi-game pack:
+ * the name of its startup .singe file inside the pack's shared zip, passed
+ * to hypseus as -usealt. Null for every ordinary game.
+ */
 data class Game(
     val name: String,
     val category: GameCategory,
     val framefilePath: String,
     val romOrScriptPath: String,
+    val altScript: String? = null,
 )
+
+// #111 - a framefile has at least one line of the form "<frame number>
+// <video file>.m2v". Only this content check tells one apart from a readme
+// or notes file sitting in the same folder.
+private val FRAME_LINE = Regex("""^\s*\d+\s+\S+\.m2v""", RegexOption.IGNORE_CASE)
+private const val FRAMEFILE_LINES_TO_CHECK = 200
+
+private fun looksLikeFramefile(file: File): Boolean =
+    try {
+        file.useLines { lines -> lines.take(FRAMEFILE_LINES_TO_CHECK).any { FRAME_LINE.containsMatchIn(it) } }
+    } catch (e: java.io.IOException) {
+        false
+    }
+
+/**
+ * #111 - the games in a multi-game pack: a folder under singe/ holding one
+ * shared Lua zip (<folder>.zip) and no <folder>.txt of its own, with each
+ * game's framefile alongside. Every real framefile in it is one game, named
+ * after the file, launched with the pack's zip plus -usealt <name>.
+ */
+private fun packGames(packDir: File): List<Game> {
+    val zip = File(packDir, "${packDir.name}.zip")
+    if (!zip.isFile) return emptyList()
+    val framefiles = packDir.listFiles { f -> f.isFile && f.extension.equals("txt", ignoreCase = true) }
+        ?.filter { looksLikeFramefile(it) }
+        ?.sortedBy { it.name.lowercase() }
+        ?: return emptyList()
+    return framefiles.map { Game(it.nameWithoutExtension, GameCategory.SINGE_ZIPPED, it.path, zip.path, it.nameWithoutExtension) }
+}
 
 sealed interface ScanResult {
     data class Found(val games: List<Game>) : ScanResult
@@ -33,6 +68,11 @@ sealed interface ScanResult {
  * read from instead of installRoot itself. installRoot is still what has
  * to contain hypseus.exe: the engine always lives in the install, only
  * the games can live elsewhere.
+ *
+ * #111 - a singe/ folder with <folder>.zip but no <folder>.txt is a
+ * multi-game pack: each framefile in it is its own game (see packGames()).
+ * Such folders used to be silently skipped, like the shared library
+ * folders above.
  */
 fun scanGames(installRoot: File, gameFolder: File? = null): ScanResult {
     // hypseus.exe is the one file every real install has, regardless of
@@ -46,10 +86,14 @@ fun scanGames(installRoot: File, gameFolder: File? = null): ScanResult {
     val games = mutableListOf<Game>()
 
     val singeDir = File(gamesRoot, "singe")
+    val packedGames = mutableListOf<Game>()
     singeDir.listFiles { f -> f.isDirectory }?.forEach { gameDir ->
         val name = gameDir.name
         val framefile = File(gameDir, "$name.txt")
-        if (!framefile.isFile) return@forEach
+        if (!framefile.isFile) {
+            packedGames += packGames(gameDir)
+            return@forEach
+        }
 
         val zip = File(gameDir, "$name.zip")
         val script = File(gameDir, "$name.singe")
@@ -70,6 +114,13 @@ fun scanGames(installRoot: File, gameFolder: File? = null): ScanResult {
                 games += Game(name, GameCategory.DAPHNE_NATIVE, framefile.path, rom.path)
             }
         }
+    }
+
+    // #111 - pack games are added last so an ordinary game always wins a
+    // name clash (ignoring case): two games must never share one name.
+    val taken = games.map { it.name.lowercase() }.toMutableSet()
+    for (packed in packedGames) {
+        if (taken.add(packed.name.lowercase())) games += packed
     }
 
     return ScanResult.Found(games.sortedBy { it.name })
