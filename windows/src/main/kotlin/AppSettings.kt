@@ -48,7 +48,23 @@ data class AppSettings(
     // setting. Default true so existing installs see no behavior change
     // now that it's configurable - previously it was always on.
     val gameFullscreenEnabled: Boolean = true,
+    // #108 - Game Folder page: read games from a user-chosen folder
+    // instead of the install's own singe/vldp/roms. See activeGameFolder()
+    // for how the two combine.
+    val gameFolderEnabled: Boolean = false,
+    val gameFolderPath: String? = null,
 )
+
+/**
+ * #108 - the folder games are read from, or null for the install's own
+ * folders (the default). Enabled with no folder chosen yet also means
+ * null, so switching the toggle on never blanks the carousel by itself.
+ * A chosen folder that later goes missing deliberately does NOT fall
+ * back: a disconnected drive shows up as an empty list, instead of
+ * silently swapping in a different set of games.
+ */
+fun AppSettings.activeGameFolder(): File? =
+    if (gameFolderEnabled) gameFolderPath?.takeIf { it.isNotBlank() }?.let { File(it) } else null
 
 private val json = Json { ignoreUnknownKeys = true }
 

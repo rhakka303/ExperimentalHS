@@ -65,11 +65,26 @@ data class GameOptions(
  * bezelLaunchArgs passes -bezeldir unconditionally too, but always at
  * the same default location -bezel alone already resolves to, so it's
  * redundant there as well, not something this needed to copy.
+ *
+ * #108 - with a game folder on, its own bezels/ folder is checked first,
+ * then the install's. hypseus does NOT look for bezels under -homedir: it
+ * opens "<bezel path>/<file>" relative to its working directory, which is
+ * the install (-datadir), so a bezel in the game folder is only found if
+ * -bezeldir points at it. That is the one case -bezeldir is needed, and
+ * the path is quoted when it has spaces (see splitArgumentTokens()).
  */
-fun bezelLaunchArgs(installRoot: File, gameName: String): List<String> {
-    val bezelFile = File(File(installRoot, "bezels"), "$gameName.png")
+fun bezelLaunchArgs(installRoot: File, gameName: String, gameFolder: File? = null): List<String> {
+    val fileName = "$gameName.png"
+    if (gameFolder != null) {
+        val gameFolderBezels = File(gameFolder, "bezels")
+        if (File(gameFolderBezels, fileName).isFile) {
+            val dir = gameFolderBezels.path
+            return listOf("-bezel", fileName, "-bezeldir", if (dir.any { it.isWhitespace() }) "\"$dir\"" else dir)
+        }
+    }
+    val bezelFile = File(File(installRoot, "bezels"), fileName)
     if (!bezelFile.isFile) return emptyList()
-    return listOf("-bezel", "$gameName.png")
+    return listOf("-bezel", fileName)
 }
 
 private val json = Json { ignoreUnknownKeys = true }
@@ -122,6 +137,10 @@ fun saveOptions(launcherFolder: File, gameName: String, options: GameOptions) {
  * true (not false, unlike the others) to match that previous always-on
  * behavior for anyone already using this app - only newly-created
  * AppSettings start from AppSettings' own gameFullscreenEnabled default.
+ *
+ * #108 - gameFolder is the Game Folder page's chosen folder when it is on
+ * (null otherwise); it only affects where a bezel is looked for, see
+ * bezelLaunchArgs().
  */
 fun launchArgumentsFor(
     installRoot: File,
@@ -130,9 +149,10 @@ fun launchArgumentsFor(
     preserveAspectRatioEnabled: Boolean = false,
     gamepadEnabled: Boolean = false,
     gameFullscreenEnabled: Boolean = true,
+    gameFolder: File? = null,
 ): List<String> {
     val args = mutableListOf<String>()
-    if (options.bezelEnabled) args += bezelLaunchArgs(installRoot, gameName)
+    if (options.bezelEnabled) args += bezelLaunchArgs(installRoot, gameName, gameFolder)
     /* #87 - neither -scorebezel_autofit nor -aspectbezelfix (below) exist
      * in DirtBagXon/hypseus-singe - checked doc/CmdLine.md and
      * src/io/cmdline.cpp, at the v3.0.2 tag and current master, neither
