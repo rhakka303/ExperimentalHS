@@ -37,6 +37,8 @@ import java.io.File
  * fonts, pics, sound, bezels and hypinput.ini are still found. hypseus
  * also writes its own logs/, ram/ and screenshots/ under -homedir, so
  * those land in the game folder while it is in use.
+ *
+ * #115 - with a game folder, -ramdir is passed too (see ramDirFor()).
  */
 fun buildLaunchArgs(game: Game, installRoot: File, gameFolder: File? = null): List<String> {
     val args = mutableListOf<String>()
@@ -65,6 +67,7 @@ fun buildLaunchArgs(game: Game, installRoot: File, gameFolder: File? = null): Li
     val dataDir = installRoot.path
     val homeDir = (gameFolder ?: installRoot).path
     args += listOf("-homedir", "$homeDir/", "-datadir", "$dataDir/")
+    gameFolder?.let { args += listOf("-ramdir", ramDirFor(it)) }
     // Same baked-in default as Android, per the owner: SDL_Gamepad
     // enabled. Not configurable in phase 1. -fullscreen used to be
     // hardcoded here too - now a real setting (AppSettings.
@@ -74,3 +77,18 @@ fun buildLaunchArgs(game: Game, installRoot: File, gameFolder: File? = null): Li
 
     return args
 }
+
+/**
+ * #115 - the -ramdir value used when a game folder is on: the game
+ * folder's own ram/. Without it hypseus splits a zipped Singe game's ram
+ * files across two places: it creates ram/singe/<game>/ under -homedir (the
+ * game folder) but writes the file relative to its working directory (the
+ * install, from -datadir), where that folder does not exist. The first
+ * launch of any such game then fails with "Error copying zip ramfile".
+ * -ramdir makes hypseus use this one absolute location for both.
+ *
+ * Forward slashes and no trailing slash, the form hypseus itself trims
+ * to. hypseus cuts every switch value at 80 characters, the same limit
+ * -homedir already has.
+ */
+fun ramDirFor(gameFolder: File): String = "${gameFolder.path.replace('\\', '/')}/ram"

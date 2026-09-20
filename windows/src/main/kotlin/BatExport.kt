@@ -113,7 +113,8 @@ private fun buildBatContent(installRoot: File, gameFolder: File?, game: Game, op
             args += listOf("-script", relativeToRoot(gamesRoot, game.romOrScriptPath))
         }
     }
-    if (gameFolder != null) args += listOf("-homedir", "${gameFolder.path}/")
+    // #115 - -ramdir goes with -homedir, see ramDirFor(); also absolute.
+    if (gameFolder != null) args += listOf("-homedir", "${gameFolder.path}/", "-ramdir", ramDirFor(gameFolder))
     // #19's own extra-argument builder - bezel-family flags plus custom
     // arguments. preserveAspectRatioEnabled/gamepadEnabled default to
     // false (omitted) here on purpose: those are app-level toggles, not

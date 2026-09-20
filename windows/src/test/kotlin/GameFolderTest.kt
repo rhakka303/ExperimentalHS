@@ -154,6 +154,43 @@ class GameFolderTest {
         assertEquals("${install.path}/", args[args.indexOf("-datadir") + 1])
     }
 
+    // ---- #115: -ramdir ----
+
+    @Test
+    fun `no ramdir is passed when the game folder is off`() {
+        val install = makeInstall()
+
+        assertFalse(buildLaunchArgs(game, install).contains("-ramdir"))
+    }
+
+    @Test
+    fun `with a game folder, ramdir is the ram folder inside it`() {
+        val install = makeInstall()
+        val games = File(tmp, "games").apply { mkdirs() }
+
+        val args = buildLaunchArgs(game, install, games)
+
+        assertEquals(ramDirFor(games), args[args.indexOf("-ramdir") + 1])
+        assertEquals(games.path.replace('\\', '/') + "/ram", ramDirFor(games))
+    }
+
+    @Test
+    fun `ramdir uses forward slashes and no trailing slash`() {
+        assertEquals("D:/my games/roms/ram", ramDirFor(File("D:\\my games\\roms")))
+        assertEquals("D:/games/ram", ramDirFor(File("D:/games/")))
+    }
+
+    @Test
+    fun `ramdir is passed for every kind of game, not only zipped Singe ones`() {
+        val install = makeInstall()
+        val games = File(tmp, "games").apply { mkdirs() }
+        val daphne = Game("cobra", GameCategory.DAPHNE_NATIVE, "f.txt", "z.zip")
+        val script = Game("plain", GameCategory.SINGE_SCRIPT, "f.txt", "s.singe")
+
+        assertTrue(buildLaunchArgs(daphne, install, games).contains("-ramdir"))
+        assertTrue(buildLaunchArgs(script, install, games).contains("-ramdir"))
+    }
+
     // ---- exportBatFiles ----
 
     @Test
@@ -187,7 +224,24 @@ class GameFolderTest {
 
         val bat = File(File(install, "batch"), "alpha.bat").readText()
         assertFalse(bat.contains("-homedir"), bat)
+        assertFalse(bat.contains("-ramdir"), bat)
         assertTrue(bat.contains("singe${File.separator}alpha${File.separator}alpha.txt"), bat)
+    }
+
+    @Test
+    fun `exported bat files carry ramdir next to homedir when the game folder is on`() {
+        val install = makeInstall()
+        val launcherFolder = File(tmp, "launcher").apply { mkdirs() }
+        val games = File(tmp, "my games").apply { mkdirs() }
+        addSingeGame(games, "external")
+        saveAppSettings(launcherFolder, AppSettings(gameFolderEnabled = true, gameFolderPath = games.path))
+        val scanned = (scanGames(install, games) as ScanResult.Found).games
+
+        exportBatFiles(install, scanned, launcherFolder)
+
+        val bat = File(File(install, "batch"), "external.bat").readText()
+        // the path has a space, so it must be quoted as one argument
+        assertTrue(bat.contains("-ramdir \"${ramDirFor(games)}\""), bat)
     }
 
     // ---- splitArgumentTokens ----
