@@ -20,6 +20,34 @@ import java.io.File
 const val EXIT_GAME_NOT_FOUND = 2
 const val EXIT_HYPSEUS_NOT_FOUND = 3
 const val EXIT_NOT_A_HYPSEUS_INSTALL = 4
+const val EXIT_BAD_ARGUMENTS = 5
+
+/**
+ * #120 - the optional `--bezel on|off` argument. Lets an external frontend
+ * turn one game's bezel on or off through the launcher's own saved
+ * options, instead of editing options.json itself.
+ */
+sealed interface BezelArgument {
+    /** No `--bezel` given: the game's saved options are left exactly as they are. */
+    data object NotGiven : BezelArgument
+    data object On : BezelArgument
+    data object Off : BezelArgument
+
+    /** `--bezel` with nothing after it (given = "") or anything but on/off. */
+    data class Invalid(val given: String) : BezelArgument
+}
+
+/** `on` or `off`, ignoring case; see [BezelArgument]. */
+fun headlessBezelArgument(args: Array<String>): BezelArgument {
+    val index = args.indexOf("--bezel")
+    if (index < 0) return BezelArgument.NotGiven
+    val value = args.getOrNull(index + 1)?.trim() ?: return BezelArgument.Invalid("")
+    return when (value.lowercase()) {
+        "on" -> BezelArgument.On
+        "off" -> BezelArgument.Off
+        else -> BezelArgument.Invalid(value)
+    }
+}
 
 /**
  * The value after `--game`, or null when the flag isn't there at all
@@ -67,10 +95,34 @@ fun runHeadless(
     gameToken: String,
     installRoot: File?,
     launcherFolder: File?,
-    launch: (Game, File, File?, List<String>) -> LaunchResult = { game, root, gameFolder, extra ->
-        launchGame(game, root, extra, discardOutput = true, gameFolder = gameFolder)
-    },
+    launch: (Game, File, File?, List<String>) -> LaunchResult = realLaunch,
+): Int = runHeadless(gameToken, installRoot, launcherFolder, BezelArgument.NotGiven, launch)
+
+private val realLaunch: (Game, File, File?, List<String>) -> LaunchResult = { game, root, gameFolder, extra ->
+    launchGame(game, root, extra, discardOutput = true, gameFolder = gameFolder)
+}
+
+/**
+ * #120 - the same flow with an optional `--bezel`. When it is on or off,
+ * the game's bezelEnabled is saved to options.json (keeping every other
+ * saved option) after the game is found and before its launch arguments
+ * are built, so this very launch uses the new value. An invalid `--bezel`
+ * stops before anything else: nothing is looked up, saved or launched. An
+ * unknown game saves nothing.
+ */
+fun runHeadless(
+    gameToken: String,
+    installRoot: File?,
+    launcherFolder: File?,
+    bezel: BezelArgument,
+    launch: (Game, File, File?, List<String>) -> LaunchResult = realLaunch,
 ): Int {
+    if (bezel is BezelArgument.Invalid) {
+        val given = if (bezel.given.isEmpty()) "nothing" else "'${bezel.given}'"
+        log(launcherFolder, "Headless launch failed: --bezel needs 'on' or 'off', got $given")
+        return EXIT_BAD_ARGUMENTS
+    }
+
     if (installRoot == null) {
         log(launcherFolder, "Headless launch failed: could not determine install root - HypdroidDesktop is not running from inside a hypseus install")
         return EXIT_NOT_A_HYPSEUS_INSTALL
@@ -94,6 +146,18 @@ fun runHeadless(
         val given = if (gameToken.isBlank()) "no game given" else "no game matching '$gameToken'"
         log(launcherFolder, "Headless launch failed: $given")
         return EXIT_GAME_NOT_FOUND
+    }
+
+    val bezelOn = when (bezel) {
+        BezelArgument.On -> true
+        BezelArgument.Off -> false
+        else -> null
+    }
+    if (bezelOn != null && launcherFolder != null) {
+        logUnexpectedExceptions(launcherFolder, "saving the bezel setting for ${game.name}") {
+            saveOptions(launcherFolder, game.name, loadOptions(launcherFolder, game.name).copy(bezelEnabled = bezelOn))
+        }
+        log(launcherFolder, "Headless: bezel ${if (bezelOn) "on" else "off"} saved for ${game.name}")
     }
 
     val extraArguments = extraLaunchArgsFor(installRoot, launcherFolder, appSettings, game)

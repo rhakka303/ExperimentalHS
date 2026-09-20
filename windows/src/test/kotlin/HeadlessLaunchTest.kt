@@ -251,4 +251,146 @@ class HeadlessLaunchTest {
         // the install's own game is not in the chosen folder, so not launchable
         assertEquals(EXIT_GAME_NOT_FOUND, runHeadless("alpha", installRoot, launcherFolder, neverLaunch))
     }
+
+    // ---- #120: --bezel on|off ----
+
+    private fun putBezelPng(name: String) {
+        File(File(installRoot, "bezels").apply { mkdirs() }, "$name.png").writeText("")
+    }
+
+    private fun optionsFile() = File(launcherFolder, "options.json")
+
+    private fun capturing(seen: MutableList<List<String>>): (Game, File, File?, List<String>) -> LaunchResult =
+        { _, _, _, extra ->
+            seen += extra
+            LaunchResult.Started(FakeProcess(0))
+        }
+
+    @Test
+    fun `no --bezel means the game's saved options are left alone`() {
+        assertEquals(BezelArgument.NotGiven, headlessBezelArgument(arrayOf()))
+        assertEquals(BezelArgument.NotGiven, headlessBezelArgument(arrayOf("--game", "alpha")))
+    }
+
+    @Test
+    fun `--bezel takes on or off, ignoring case`() {
+        assertEquals(BezelArgument.On, headlessBezelArgument(arrayOf("--game", "alpha", "--bezel", "on")))
+        assertEquals(BezelArgument.Off, headlessBezelArgument(arrayOf("--bezel", "off", "--game", "alpha")))
+        assertEquals(BezelArgument.On, headlessBezelArgument(arrayOf("--bezel", "ON")))
+        assertEquals(BezelArgument.Off, headlessBezelArgument(arrayOf("--bezel", "Off")))
+    }
+
+    @Test
+    fun `--bezel with nothing after it, or anything but on or off, is invalid`() {
+        assertEquals(BezelArgument.Invalid(""), headlessBezelArgument(arrayOf("--game", "alpha", "--bezel")))
+        assertEquals(BezelArgument.Invalid("maybe"), headlessBezelArgument(arrayOf("--bezel", "maybe")))
+        assertEquals(BezelArgument.Invalid("true"), headlessBezelArgument(arrayOf("--bezel", "true")))
+    }
+
+    @Test
+    fun `--bezel on saves it, keeps the other saved options, and launches with the bezel`() {
+        makeInstall("alpha")
+        putBezelPng("alpha")
+        saveOptions(launcherFolder, "alpha", GameOptions(arguments = listOf("-scanlines"), coverArtOverride = CoverArtType.CD))
+        val seen = mutableListOf<List<String>>()
+
+        val code = runHeadless("alpha", installRoot, launcherFolder, BezelArgument.On, capturing(seen))
+
+        assertEquals(0, code)
+        val saved = loadOptions(launcherFolder, "alpha")
+        assertTrue(saved.bezelEnabled)
+        assertEquals(listOf("-scanlines"), saved.arguments)
+        assertEquals(CoverArtType.CD, saved.coverArtOverride)
+        assertTrue(seen.single().containsAll(listOf("-bezel", "alpha.png")), seen.single().toString())
+    }
+
+    @Test
+    fun `--bezel off saves it, keeps the other saved options, and launches without the bezel`() {
+        makeInstall("alpha")
+        putBezelPng("alpha")
+        saveOptions(launcherFolder, "alpha", GameOptions(arguments = listOf("-scanlines"), bezelEnabled = true))
+        val seen = mutableListOf<List<String>>()
+
+        val code = runHeadless("alpha", installRoot, launcherFolder, BezelArgument.Off, capturing(seen))
+
+        assertEquals(0, code)
+        val saved = loadOptions(launcherFolder, "alpha")
+        assertFalse(saved.bezelEnabled)
+        assertEquals(listOf("-scanlines"), saved.arguments)
+        assertFalse(seen.single().contains("-bezel"), seen.single().toString())
+    }
+
+    @Test
+    fun `--bezel on for a game with no options yet creates them, and touches no other game`() {
+        makeInstall("alpha", "beta")
+        putBezelPng("alpha")
+        saveOptions(launcherFolder, "beta", GameOptions(arguments = listOf("-keep")))
+
+        runHeadless("alpha", installRoot, launcherFolder, BezelArgument.On, capturing(mutableListOf()))
+
+        assertTrue(loadOptions(launcherFolder, "alpha").bezelEnabled)
+        assertEquals(GameOptions(arguments = listOf("-keep")), loadOptions(launcherFolder, "beta"))
+    }
+
+    @Test
+    fun `--bezel on is saved even when the game has no bezel image, and that launch simply has none`() {
+        makeInstall("alpha")
+        val seen = mutableListOf<List<String>>()
+
+        val code = runHeadless("alpha", installRoot, launcherFolder, BezelArgument.On, capturing(seen))
+
+        assertEquals(0, code)
+        assertTrue(loadOptions(launcherFolder, "alpha").bezelEnabled)
+        assertFalse(seen.single().contains("-bezel"), seen.single().toString())
+    }
+
+    @Test
+    fun `without --bezel a saved bezel setting is neither changed nor lost`() {
+        makeInstall("alpha")
+        putBezelPng("alpha")
+        saveOptions(launcherFolder, "alpha", GameOptions(bezelEnabled = true))
+        val before = optionsFile().readText()
+        val seen = mutableListOf<List<String>>()
+
+        runHeadless("alpha", installRoot, launcherFolder, capturing(seen))
+        runHeadless("alpha", installRoot, launcherFolder, BezelArgument.NotGiven, capturing(seen))
+
+        assertEquals(before, optionsFile().readText())
+        assertTrue(seen.all { it.contains("-bezel") }, seen.toString())
+    }
+
+    @Test
+    fun `an invalid --bezel launches nothing, saves nothing, logs why, and returns its own code`() {
+        makeInstall("alpha")
+
+        val missing = runHeadless("alpha", installRoot, launcherFolder, BezelArgument.Invalid(""), neverLaunch)
+        val wrong = runHeadless("alpha", installRoot, launcherFolder, BezelArgument.Invalid("maybe"), neverLaunch)
+
+        assertEquals(EXIT_BAD_ARGUMENTS, missing)
+        assertEquals(EXIT_BAD_ARGUMENTS, wrong)
+        assertFalse(optionsFile().exists())
+        assertTrue(logText().contains("--bezel needs 'on' or 'off', got nothing"), logText())
+        assertTrue(logText().contains("got 'maybe'"), logText())
+    }
+
+    @Test
+    fun `an unknown game with --bezel returns the not-found code and saves nothing`() {
+        makeInstall("alpha")
+
+        val code = runHeadless("nope", installRoot, launcherFolder, BezelArgument.On, neverLaunch)
+
+        assertEquals(EXIT_GAME_NOT_FOUND, code)
+        assertFalse(optionsFile().exists())
+    }
+
+    @Test
+    fun `the saved bezel is what the UI's own options loading sees afterwards`() {
+        makeInstall("alpha")
+
+        runHeadless("alpha", installRoot, launcherFolder, BezelArgument.On, capturing(mutableListOf()))
+        assertTrue(loadAllOptions(launcherFolder)["alpha"]?.bezelEnabled == true)
+
+        runHeadless("alpha", installRoot, launcherFolder, BezelArgument.Off, capturing(mutableListOf()))
+        assertTrue(loadAllOptions(launcherFolder)["alpha"]?.bezelEnabled == false)
+    }
 }
