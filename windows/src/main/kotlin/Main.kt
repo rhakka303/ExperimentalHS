@@ -1,5 +1,7 @@
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.VerticalScrollbar
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.TooltipArea
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -406,6 +408,7 @@ private enum class CarouselFocus { CARDS, GEAR }
 // see GameCard's identical @Suppress comment - #29's background image
 // reads the same runtime media/ files, not compile-time app resources.
 @Suppress("DEPRECATION")
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun GameCarousel(
     games: List<Game>,
@@ -610,6 +613,24 @@ private fun GameCarousel(
         }
     }
 
+    // #127 - the jump-to-letter picker (top bar) is a dialog, and while it is
+    // open it holds keyboard focus. Once it is gone the carousel must get
+    // focus straight back, or Left/Right/Enter would land on nothing after a
+    // jump. Same guarded requestFocus() as the pager's own first-layout
+    // request (see the comment there): it can throw on desktop.
+    var letterPickerOpen by remember { mutableStateOf(false) }
+    var letterPickerUsed by remember { mutableStateOf(false) }
+    LaunchedEffect(letterPickerOpen) {
+        if (letterPickerUsed && !letterPickerOpen) {
+            carouselFocus = CarouselFocus.CARDS
+            try {
+                focusRequester.requestFocus()
+            } catch (e: IllegalStateException) {
+                // see the pager's initial-focus comment
+            }
+        }
+    }
+
     // #69 - a second real input source feeding the exact same actions
     // the carousel's own keyboard onKeyEvent already handles below - not
     // a new interaction model. Only collects while GameCarousel is
@@ -712,6 +733,72 @@ private fun GameCarousel(
                 // real reasoning here exactly. Default theme color the
                 // rest of the time, against the plain background.
                 val iconTint = if (backgroundBitmap != null) Color.White else LocalContentColor.current
+
+                // #127 - jump-to-letter: shows the letter of the game in the
+                // centre (follows the carousel as it scrolls) and opens a
+                // picker. It only scrolls the carousel; the list is never
+                // filtered, and focus goes back to the cards afterwards (see
+                // the LaunchedEffect above).
+                val letterTargets = remember(games) { letterJumpTargets(games) }
+                val currentLetter = games.getOrNull(pagerState.currentPage)?.let { letterEntryFor(it.name) } ?: DIGITS_ENTRY
+                // A bare letter tells nobody what it is (owner, on first
+                // use), so it is labelled "Sort" (owner's wording) and has a hover tooltip. An
+                // A-to-Z icon was tried and read as "AZ 0-9": dropped.
+                TooltipArea(
+                    tooltip = {
+                        Surface(shape = RoundedCornerShape(6.dp), tonalElevation = 4.dp, shadowElevation = 4.dp) {
+                            Text(
+                                "Jump to a letter (#, A-Z)",
+                                style = MaterialTheme.typography.labelMedium,
+                                modifier = Modifier.padding(8.dp),
+                            )
+                        }
+                    },
+                    delayMillis = 400,
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(MaterialTheme.colorScheme.primary)
+                            .clickable {
+                                letterPickerUsed = true
+                                letterPickerOpen = true
+                            }
+                            .padding(start = 12.dp, top = 4.dp, bottom = 4.dp, end = 4.dp),
+                    ) {
+                        Text(
+                            "Sort",
+                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.75f),
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            currentLetter,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        Icon(
+                            Icons.Filled.KeyboardArrowDown,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                if (letterPickerOpen) {
+                    LetterPickerDialog(
+                        targets = letterTargets,
+                        current = currentLetter,
+                        onSelect = { entry ->
+                            letterPickerOpen = false
+                            letterTargets[entry]?.let { target ->
+                                coroutineScope.launch { pagerState.animateScrollToPage(target) }
+                            }
+                        },
+                        onDismiss = { letterPickerOpen = false },
+                    )
+                }
                 // #102 - the X/quit icon existed specifically because
                 // real Fullscreen mode has no OS window chrome to close
                 // from. Removed along with App Full Screen itself - the
@@ -3361,6 +3448,67 @@ private fun TokenPickerDialog(title: String, options: List<String>, onSelect: (S
                     }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "Cancel",
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier
+                        .align(Alignment.End)
+                        .clickable(onClick = onDismiss)
+                        .padding(8.dp),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * #127 - the jump-to-letter picker: a compact grid of "#" and "A" to "Z"
+ * (27 entries are too tall for a plain list on a 1080p window). An entry with
+ * no games is dimmed and not clickable; the current one is highlighted. Same
+ * Dialog shape as TokenPickerDialog. Choosing an entry or dismissing it is
+ * the caller's to handle, including giving the carousel its focus back.
+ */
+@Composable
+private fun LetterPickerDialog(
+    targets: Map<String, Int>,
+    current: String,
+    onSelect: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = RoundedCornerShape(16.dp), tonalElevation = 4.dp) {
+            Column(modifier = Modifier.padding(24.dp)) {
+                Text("Jump to letter", style = MaterialTheme.typography.headlineSmall)
+                Spacer(modifier = Modifier.height(16.dp))
+                for (row in LETTER_ENTRIES.chunked(7)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        for (entry in row) {
+                            val enabled = entry in targets
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .size(width = 48.dp, height = 44.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(
+                                        if (entry == current) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                    )
+                                    .let { if (enabled) it.clickable { onSelect(entry) } else it },
+                            ) {
+                                Text(
+                                    entry,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = when {
+                                        entry == current -> MaterialTheme.colorScheme.onPrimary
+                                        enabled -> LocalContentColor.current
+                                        else -> LocalContentColor.current.copy(alpha = 0.3f)
+                                    },
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                }
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     "Cancel",
                     style = MaterialTheme.typography.labelLarge,
