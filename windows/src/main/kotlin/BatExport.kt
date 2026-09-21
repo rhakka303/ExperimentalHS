@@ -32,9 +32,10 @@ import java.io.File
  * resolves to a `singe\` folder that sits *next to* the real install,
  * not inside it).
  *
- * No baseline flags (-gamepad, the live launcher's own baked-in default)
- * get added here - #20's own scope decision. A game's saved GameOptions
- * (bezel-family flags + custom arguments, #19's launchArgumentsFor())
+ * No baseline flags get added here (#20's own scope decision), so -gamepad
+ * is not added either, whatever the Gamepad switch says (#130 left this as
+ * it was; the live launcher sends it only when the switch is on). A
+ * game's saved GameOptions (bezel-family flags + custom arguments, #19's launchArgumentsFor())
  * still applies, same as the live launcher; that's the one thing a
  * `.bat` and the live launcher genuinely share.
  *

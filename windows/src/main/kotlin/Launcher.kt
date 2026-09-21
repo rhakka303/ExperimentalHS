@@ -45,8 +45,7 @@ fun launchGame(
         return LaunchResult.HypseusNotFound(hypseusExe)
     }
 
-    val args = buildLaunchArgs(game, installRoot, gameFolder) +
-        extraArguments.flatMap { splitArgumentTokens(it) }
+    val args = hypseusArguments(game, installRoot, extraArguments, gameFolder)
     val builder = ProcessBuilder(listOf(hypseusExe.path) + args)
         .directory(installRoot)
     if (discardOutput) {
@@ -56,6 +55,22 @@ fun launchGame(
 
     return LaunchResult.Started(builder.start())
 }
+
+/**
+ * #130 - everything after hypseus.exe on the command line: #9's own argv,
+ * then each extra entry split into tokens. Its own function so a test can
+ * check the exact command line a launch produces (for instance, that
+ * -gamepad appears once with the Gamepad switch on and not at all with it
+ * off) without starting a process.
+ */
+fun hypseusArguments(
+    game: Game,
+    installRoot: File,
+    extraArguments: List<String> = emptyList(),
+    gameFolder: File? = null,
+): List<String> =
+    buildLaunchArgs(game, installRoot, gameFolder) +
+        extraArguments.flatMap { splitArgumentTokens(it) }
 
 /**
  * #106 - the extra-argument list for a game's launch, shared by the UI

@@ -68,12 +68,11 @@ fun buildLaunchArgs(game: Game, installRoot: File, gameFolder: File? = null): Li
     val homeDir = (gameFolder ?: installRoot).path
     args += listOf("-homedir", "$homeDir/", "-datadir", "$dataDir/")
     gameFolder?.let { args += listOf("-ramdir", ramDirFor(it)) }
-    // Same baked-in default as Android, per the owner: SDL_Gamepad
-    // enabled. Not configurable in phase 1. -fullscreen used to be
-    // hardcoded here too - now a real setting (AppSettings.
-    // gameFullscreenEnabled), applied via launchArgumentsFor() alongside
-    // every other configurable flag instead of unconditionally here.
-    args += "-gamepad"
+    // #130 - no -gamepad here. It used to be a baked-in default copied from
+    // Android, added even with the Controls page's Gamepad switch off (and
+    // twice with it on). -fullscreen went the same way earlier. Both are
+    // real settings now (AppSettings.gamepadEnabled / gameFullscreenEnabled),
+    // added by launchArgumentsFor() alongside every other configurable flag.
 
     return args
 }
