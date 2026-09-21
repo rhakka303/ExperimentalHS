@@ -3750,11 +3750,13 @@ private fun SettingsCard(title: String, subtitle: String, modifier: Modifier, is
 
 /**
  * #91 - real content on day one, not the #24 blank stub this replaces:
- * the app's own logo, its version (matching Hypdroid's own current
- * versioning, 5.0 - not this launcher's own separate release history,
- * since it isn't cut releases of its own yet), and a credit line for
- * the one real thing this app launches - Hypseus Singe by DirtBagXon,
- * GPL-3.0.
+ * the app's own logo, its version, and a credit line for the one real
+ * thing this app launches - Hypseus Singe by DirtBagXon, GPL-3.0.
+ *
+ * #126 - the version was a typed-in "5.0" here, chosen to match the Android
+ * app's number of the day; it matched nothing once that moved on and was
+ * never this launcher's own. It is now read from the build (see
+ * appVersionText()), so build.gradle.kts's packageVersion is the only place.
  */
 @Composable
 private fun AboutScreen(onBack: () -> Unit) {
@@ -3810,7 +3812,7 @@ private fun AboutScreen(onBack: () -> Unit) {
                 )
                 Spacer(modifier = Modifier.height(16.dp))
             }
-            Text("Version 5.0", style = MaterialTheme.typography.titleMedium)
+            Text(remember { appVersionText() }, style = MaterialTheme.typography.titleMedium)
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 "Launches Hypseus Singe by DirtBagXon (GPL-3.0)",
