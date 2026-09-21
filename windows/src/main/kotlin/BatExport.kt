@@ -32,19 +32,15 @@ import java.io.File
  * resolves to a `singe\` folder that sits *next to* the real install,
  * not inside it).
  *
- * No baseline flags get added here (#20's own scope decision), so -gamepad
- * is not added either, whatever the Gamepad switch says (#130 left this as
- * it was; the live launcher sends it only when the switch is on). A
- * game's saved GameOptions (bezel-family flags + custom arguments, #19's launchArgumentsFor())
- * still applies, same as the live launcher; that's the one thing a
- * `.bat` and the live launcher genuinely share.
- *
- * Real, live-found exception: -fullscreen was originally excluded here
- * too (it used to be one of the "baseline" flags), but it isn't a
- * hardcoded baseline anymore - AppSettings.gameFullscreenEnabled is a
- * real, user-toggled setting now (Video Settings' own "Game Full
- * Screen"), so an exported `.bat` reads and honors it just like the live
- * launcher does, rather than silently omitting whatever the toggle says.
+ * #133 - the flags are the ones a live launch sends: both call
+ * launchFlagsFor() (Launcher.kt), which turns the game's saved options
+ * (bezel, overlay bezel, custom arguments) and the app-level switches (Game
+ * Full Screen, Gamepad, Preserve Video Aspect Ratio) into hypseus flags, as
+ * they are set when Export is clicked. #20 first added no baseline flags at
+ * all, then Game Full Screen was let in once it became a real setting, and
+ * Gamepad and Preserve Video Aspect Ratio were left out by mistake, so a
+ * `.bat` ignored both switches. A `.bat` is a snapshot: change a setting,
+ * then export again.
  */
 fun exportBatFiles(installRoot: File, games: List<Game>, launcherFolder: File?): Int {
     val batchDir = File(installRoot, "batch")
@@ -65,7 +61,7 @@ fun exportBatFiles(installRoot: File, games: List<Game>, launcherFolder: File?):
 
     for (game in games) {
         val options = allOptions[game.name] ?: GameOptions()
-        val content = buildBatContent(installRoot, appSettings.activeGameFolder(), game, options, appSettings.gameFullscreenEnabled)
+        val content = buildBatContent(installRoot, game, options, appSettings)
         File(batchDir, "${game.name}.bat").writeText(content)
     }
 
@@ -90,7 +86,8 @@ private fun batArg(arg: String): String = if (arg.contains(' ')) "\"$arg\"" else
  * That -homedir is necessarily an absolute path, unlike everything else in
  * an exported file: if the game folder moves, re-export.
  */
-private fun buildBatContent(installRoot: File, gameFolder: File?, game: Game, options: GameOptions, gameFullscreenEnabled: Boolean): String {
+private fun buildBatContent(installRoot: File, game: Game, options: GameOptions, appSettings: AppSettings): String {
+    val gameFolder = appSettings.activeGameFolder()
     val gamesRoot = gameFolder ?: installRoot
     val args = mutableListOf<String>()
     when (game.category) {
@@ -116,12 +113,8 @@ private fun buildBatContent(installRoot: File, gameFolder: File?, game: Game, op
     }
     // #115 - -ramdir goes with -homedir, see ramDirFor(); also absolute.
     if (gameFolder != null) args += listOf("-homedir", "${gameFolder.path}/", "-ramdir", ramDirFor(gameFolder))
-    // #19's own extra-argument builder - bezel-family flags plus custom
-    // arguments. preserveAspectRatioEnabled/gamepadEnabled default to
-    // false (omitted) here on purpose: those are app-level toggles, not
-    // part of a game's own saved GameOptions, and #20 is explicit that no
-    // baseline flags get added automatically. gameFullscreenEnabled is
-    // the one exception - see this file's own doc comment for why.
+    // #133 - the same flag builder the live launch uses (launchFlagsFor):
+    // bezel-family flags, the app-level switches, then custom arguments.
     //
     // Real, live-found bug: launchArgumentsFor() always appends
     // options.arguments *last* (its own doc comment), and each saved
@@ -143,11 +136,7 @@ private fun buildBatContent(installRoot: File, gameFolder: File?, game: Game, op
     // token, its quotes dropped here and re-added by batArg() below), and
     // custom arguments get the same quote-aware split the live launcher
     // uses.
-    val extraArgs = launchArgumentsFor(
-        installRoot, options, game.name,
-        gameFullscreenEnabled = gameFullscreenEnabled,
-        gameFolder = gameFolder,
-    )
+    val extraArgs = launchFlagsFor(installRoot, options, game.name, appSettings)
     args += extraArgs.dropLast(options.arguments.size).flatMap { splitArgumentTokens(it) }
     args += options.arguments.flatMap { splitArgumentTokens(it) }
 

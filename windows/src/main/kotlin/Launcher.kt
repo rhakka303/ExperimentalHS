@@ -87,16 +87,33 @@ fun extraLaunchArgsFor(
     game: Game,
 ): List<String> =
     launcherFolder?.let {
-        launchArgumentsFor(
-            installRoot,
-            loadOptions(it, game.name),
-            game.name,
-            appSettings.preserveAspectRatioEnabled,
-            appSettings.gamepadEnabled,
-            appSettings.gameFullscreenEnabled,
-            appSettings.activeGameFolder(),
-        )
+        launchFlagsFor(installRoot, loadOptions(it, game.name), game.name, appSettings)
     } ?: emptyList()
+
+/**
+ * #133 - the one place the app settings and a game's saved options turn into
+ * hypseus flags. The live launch (extraLaunchArgsFor) and the exported `.bat`
+ * files (BatExport.kt) both call it, so a setting added to
+ * launchArgumentsFor() reaches both. Before this the export built its own
+ * call and never passed Gamepad or Preserve Video Aspect Ratio.
+ *
+ * Named arguments on purpose: three adjacent Booleans are easy to swap.
+ */
+fun launchFlagsFor(
+    installRoot: File,
+    options: GameOptions,
+    gameName: String,
+    appSettings: AppSettings,
+): List<String> =
+    launchArgumentsFor(
+        installRoot = installRoot,
+        options = options,
+        gameName = gameName,
+        preserveAspectRatioEnabled = appSettings.preserveAspectRatioEnabled,
+        gamepadEnabled = appSettings.gamepadEnabled,
+        gameFullscreenEnabled = appSettings.gameFullscreenEnabled,
+        gameFolder = appSettings.activeGameFolder(),
+    )
 
 /**
  * #108 - splits one saved argument entry into argv tokens on whitespace,
