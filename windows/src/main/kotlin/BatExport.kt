@@ -72,7 +72,8 @@ fun exportBatFiles(installRoot: File, games: List<Game>, launcherFolder: File?):
  * A path relative to root - what hypseus resolves -framefile/-zlua/-script
  * against (its own homedir), not the .bat's own working directory. No
  * `..\` prefix - see this file's own doc comment for why that would point
- * one level too high.
+ * one level too high. Only used with the Game Folder off (#132): with it on,
+ * the file uses full paths.
  */
 private fun relativeToRoot(root: File, absolutePath: String): String =
     root.toPath().relativize(File(absolutePath).toPath()).toString()
@@ -80,39 +81,50 @@ private fun relativeToRoot(root: File, absolutePath: String): String =
 private fun batArg(arg: String): String = if (arg.contains(' ')) "\"$arg\"" else arg
 
 /**
- * #108 - gameFolder, when non-null, is where these games actually live, so
- * paths are relative to it and hypseus gets an explicit -homedir pointing
- * there (its default would be the install, which doesn't contain them).
- * That -homedir is necessarily an absolute path, unlike everything else in
- * an exported file: if the game folder moves, re-export.
+ * #108 - with the Game Folder on, the games live outside the install, so the
+ * file needs an explicit -homedir there.
+ *
+ * #132 - that first version also wrote -framefile/-zlua/-script relative to
+ * the game folder, on the belief that hypseus resolves them against -homedir.
+ * It resolves them against its working directory (the install, or the
+ * `batch` folder when the file is opened from Explorer), where they do not
+ * exist, so hypseus stopped with "Game Data file ... does not exist" and the
+ * game never started. Tests only checked the text of the file; nothing ran
+ * one. So with the Game Folder on, the file now uses exactly the argument
+ * list the live launch uses (buildLaunchArgs): full paths, -homedir, -datadir
+ * (the install, so hypseus still finds its fonts, pictures, sound, bezels and
+ * input files) and -ramdir. The file already had to hold a full -homedir, so
+ * it already broke if the game folder moved: re-export. With the Game
+ * Folder off, nothing changes: relative paths, no -homedir/-datadir/-ramdir.
  */
 private fun buildBatContent(installRoot: File, game: Game, options: GameOptions, appSettings: AppSettings): String {
     val gameFolder = appSettings.activeGameFolder()
-    val gamesRoot = gameFolder ?: installRoot
     val args = mutableListOf<String>()
-    when (game.category) {
-        GameCategory.DAPHNE_NATIVE -> {
-            args += game.name
-            args += "vldp"
-            args += listOf("-framefile", relativeToRoot(gamesRoot, game.framefilePath))
-        }
-        GameCategory.SINGE_ZIPPED -> {
-            args += "singe"
-            args += "vldp"
-            args += listOf("-framefile", relativeToRoot(gamesRoot, game.framefilePath))
-            args += listOf("-zlua", relativeToRoot(gamesRoot, game.romOrScriptPath))
-            // #111 - see buildLaunchArgs(): a multi-game pack game needs its startup script named
-            game.altScript?.let { args += listOf("-usealt", it) }
-        }
-        GameCategory.SINGE_SCRIPT -> {
-            args += "singe"
-            args += "vldp"
-            args += listOf("-framefile", relativeToRoot(gamesRoot, game.framefilePath))
-            args += listOf("-script", relativeToRoot(gamesRoot, game.romOrScriptPath))
+    if (gameFolder != null) {
+        args += buildLaunchArgs(game, installRoot, gameFolder)
+    } else {
+        when (game.category) {
+            GameCategory.DAPHNE_NATIVE -> {
+                args += game.name
+                args += "vldp"
+                args += listOf("-framefile", relativeToRoot(installRoot, game.framefilePath))
+            }
+            GameCategory.SINGE_ZIPPED -> {
+                args += "singe"
+                args += "vldp"
+                args += listOf("-framefile", relativeToRoot(installRoot, game.framefilePath))
+                args += listOf("-zlua", relativeToRoot(installRoot, game.romOrScriptPath))
+                // #111 - see buildLaunchArgs(): a multi-game pack game needs its startup script named
+                game.altScript?.let { args += listOf("-usealt", it) }
+            }
+            GameCategory.SINGE_SCRIPT -> {
+                args += "singe"
+                args += "vldp"
+                args += listOf("-framefile", relativeToRoot(installRoot, game.framefilePath))
+                args += listOf("-script", relativeToRoot(installRoot, game.romOrScriptPath))
+            }
         }
     }
-    // #115 - -ramdir goes with -homedir, see ramDirFor(); also absolute.
-    if (gameFolder != null) args += listOf("-homedir", "${gameFolder.path}/", "-ramdir", ramDirFor(gameFolder))
     // #133 - the same flag builder the live launch uses (launchFlagsFor):
     // bezel-family flags, the app-level switches, then custom arguments.
     //
