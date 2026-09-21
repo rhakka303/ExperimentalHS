@@ -1,13 +1,18 @@
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import org.junit.jupiter.api.io.TempDir
 
 /**
  * #133 - an exported `.bat` carries the same flags a live launch sends.
- * Pure files and argument lists; no real hypseus. The paths in a `.bat` are
- * meant to differ from a live launch (relative, no -datadir), so the parity
- * check leaves them out and compares everything else, in order.
+ * Pure files and argument lists; no real hypseus. With the Game Folder off
+ * the paths in a `.bat` are meant to differ from a live launch (relative, no
+ * -datadir), so the parity check leaves them out and compares everything
+ * else, in order.
+ *
+ * #132 - with the Game Folder on, a `.bat` is the live launch's whole
+ * argument list, paths included.
  */
 class BatExportFlagsTest {
 
@@ -207,6 +212,84 @@ class BatExportFlagsTest {
             listOf("-preserve_aspect_ratio", "-gamepad", "-fullscreen"),
             withoutPaths(batTokens("zipped")),
         )
+    }
+
+    // ---- #132: with the game folder on, the .bat launches the way the live launcher does ----
+
+    private fun valueAfter(tokens: List<String>, flag: String): String? {
+        val i = tokens.indexOf(flag)
+        return if (i < 0) null else tokens[i + 1]
+    }
+
+    @Test
+    fun `with the game folder on, a bat is the live launch's whole argument list, paths included`() {
+        makeInstall()
+        saveOptions(
+            launcherFolder,
+            "zipped",
+            GameOptions(bezelEnabled = true, overlayBezel = true, arguments = listOf("-scalefactor 50")),
+        )
+
+        for (gamepad in listOf(false, true)) {
+            val games = export(settings(gamepad = gamepad, preserve = gamepad, fullscreen = true, folder = true))
+            assertEquals(5, games.size)
+            for (game in games) {
+                assertEquals(liveTokens(game), batTokens(game.name), "gamepad=$gamepad game=${game.name}")
+            }
+        }
+    }
+
+    @Test
+    fun `with the game folder on, every game path in a bat is a full path inside the game folder`() {
+        makeInstall()
+
+        for (game in export(settings(gamepad = false, preserve = false, fullscreen = true, folder = true))) {
+            val tokens = batTokens(game.name)
+            val paths = listOf("-framefile", "-zlua", "-script").mapNotNull { valueAfter(tokens, it) }
+            assertTrue(paths.isNotEmpty(), game.name)
+            for (path in paths) {
+                assertTrue(File(path).isAbsolute, "${game.name}: $path")
+                assertTrue(File(path).startsWith(gameFolder), "${game.name}: $path")
+            }
+        }
+    }
+
+    @Test
+    fun `with the game folder on, a bat passes homedir as the game folder and datadir as the install`() {
+        makeInstall()
+
+        for (game in export(settings(gamepad = false, preserve = false, fullscreen = true, folder = true))) {
+            val tokens = batTokens(game.name)
+            assertEquals("${gameFolder.path}/", valueAfter(tokens, "-homedir"), game.name)
+            assertEquals("${install.path}/", valueAfter(tokens, "-datadir"), game.name)
+            assertEquals(ramDirFor(gameFolder), valueAfter(tokens, "-ramdir"), game.name)
+        }
+    }
+
+    @Test
+    fun `with the game folder on, a path with a space stays one quoted argument in the file`() {
+        makeInstall() // the game folder is named "my games"
+
+        export(settings(gamepad = false, preserve = false, fullscreen = true, folder = true))
+
+        val line = batFile("zipped").readLines()[1]
+        val zipped = File(File(File(gameFolder, "singe"), "zipped"), "zipped")
+        assertTrue(line.contains("-framefile \"${zipped.path}.txt\""), line)
+        assertTrue(line.contains("-zlua \"${zipped.path}.zip\""), line)
+        assertTrue(line.contains("-homedir \"${gameFolder.path}/\""), line)
+    }
+
+    @Test
+    fun `with the game folder off, a bat keeps relative game paths and no homedir, datadir or ramdir`() {
+        makeInstall()
+
+        for (game in export(settings(gamepad = true, preserve = true, fullscreen = true, folder = false))) {
+            val tokens = batTokens(game.name)
+            for (flag in listOf("-homedir", "-datadir", "-ramdir")) assertEquals(0, count(tokens, flag), "${game.name} $flag")
+            val paths = listOf("-framefile", "-zlua", "-script").mapNotNull { valueAfter(tokens, it) }
+            assertTrue(paths.isNotEmpty(), game.name)
+            for (path in paths) assertTrue(!File(path).isAbsolute, "${game.name}: $path")
+        }
     }
 
     // ---- the shared builder ----
