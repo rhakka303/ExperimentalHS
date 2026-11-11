@@ -130,7 +130,7 @@ fun runHeadless(
 ): Int = runHeadless(gameToken, installRoot, launcherFolder, BezelArgument.NotGiven, launch)
 
 private val realLaunch: (Game, File, File?, List<String>) -> LaunchResult = { game, root, gameFolder, extra ->
-    launchGame(game, root, extra, discardOutput = true, gameFolder = gameFolder)
+    launchGame(game, root, extra, gameFolder = gameFolder)
 }
 
 /**

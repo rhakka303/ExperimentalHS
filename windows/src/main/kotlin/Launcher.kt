@@ -25,10 +25,10 @@ sealed interface LaunchResult {
  * saved entry can itself be a multi-token string (e.g. "-scalefactor
  * 50"), not necessarily one argv token per entry.
  *
- * #106 - discardOutput is for the headless path only, which waits on the
- * process for the whole session: an unread stdout/stderr pipe eventually
- * fills and would block hypseus mid-game. Defaults to false so the UI
- * path's behavior is untouched.
+ * #106/#136 - hypseus's stdout and stderr are always discarded. Nothing
+ * reads them, and an unread pipe eventually fills and blocks hypseus
+ * mid-game (#106 fixed this for the headless path only; #136 found the
+ * same freeze on the UI path). hypseus still writes its own log file.
  *
  * #108 - gameFolder is the Game Folder page's chosen folder when it is
  * on, null for the install's own folders; see buildLaunchArgs().
@@ -37,7 +37,6 @@ fun launchGame(
     game: Game,
     installRoot: File,
     extraArguments: List<String> = emptyList(),
-    discardOutput: Boolean = false,
     gameFolder: File? = null,
 ): LaunchResult {
     val hypseusExe = File(installRoot, "hypseus.exe")
@@ -48,10 +47,8 @@ fun launchGame(
     val args = hypseusArguments(game, installRoot, extraArguments, gameFolder)
     val builder = ProcessBuilder(listOf(hypseusExe.path) + args)
         .directory(installRoot)
-    if (discardOutput) {
-        builder.redirectOutput(ProcessBuilder.Redirect.DISCARD)
-        builder.redirectError(ProcessBuilder.Redirect.DISCARD)
-    }
+        .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+        .redirectError(ProcessBuilder.Redirect.DISCARD)
 
     return LaunchResult.Started(builder.start())
 }
